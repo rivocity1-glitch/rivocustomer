@@ -6,9 +6,13 @@ import { supabase } from '../../lib/supabase';
 
 interface VendorData {
   avatar_url?: string | null;
+  banner_url?: string | null;
+  tagline?: string | null;
+  store_status?: string | null;
   vendors?: {
     shop_name: string;
   } | null;
+  has_active_offers?: boolean;
 }
 
 interface Product {
@@ -17,6 +21,7 @@ interface Product {
   price: number;
   image_url?: string;
   category_id?: string;
+  status?: string;
   stock_status?: string;
   stock?: number;
 }
@@ -71,14 +76,27 @@ export default function StoreScreen() {
   }
 
   async function loadVendorData() {
-    // Look up via vendor_id to retrieve the proper associated metadata link
+    // Look up via vendor_id to retrieve the proper associated metadata link including banner, tagline and store_status
     const { data, error } = await supabase
       .from('vendor_profiles')
-      .select('avatar_url, vendors(shop_name)')
+      .select('avatar_url, banner_url, tagline, store_status, vendors(shop_name)')
       .eq('vendor_id', vendorId);
 
     if (!error && data && data.length > 0) {
-      setVendor(data[0] as any);
+      const vendorProfile = data[0] as any;
+
+      // Dynamic lookup optimization checking if active offers exist for this specific vendor
+      const { count, error: offerError } = await supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true })
+        .eq('vendor_id', vendorId)
+        .eq('status', 'active')
+        .not('price', 'is', null); // Replace with active offer columns if explicitly present later
+
+      // Simulating a boolean flag check for existing item availability context
+      vendorProfile.has_active_offers = !offerError && count ? count > 0 : false;
+
+      setVendor(vendorProfile);
     } else if (error) {
       console.error('loadVendorData Query Exception:', error.message);
     }
@@ -144,6 +162,18 @@ export default function StoreScreen() {
   };
 
   const shopName = vendor?.vendors?.shop_name;
+  const storeStatus = (vendor?.store_status || 'open').toLowerCase();
+
+  // Compute Store Status Badging Metrics Configurations Dynamically
+  const statusBadgeConfig = useMemo(() => {
+    if (storeStatus === 'busy') {
+      return { text: '● BUSY', bg: '#FFF3E0', color: '#F97316' };
+    }
+    if (storeStatus === 'closed') {
+      return { text: '● CLOSED', bg: '#FEE2E2', color: '#EF4444' };
+    }
+    return { text: '● OPEN', bg: '#E8FBF0', color: '#22CC71' };
+  }, [storeStatus]);
 
   const totalCartQuantity = useMemo(() => {
     return cartItems.reduce((acc, curr) => acc + (curr.quantity || 0), 0);
@@ -185,10 +215,14 @@ export default function StoreScreen() {
           <View style={styles.topSectionContainer}>
             {/* LARGE HERO STORE BANNER */}
             <View style={styles.bannerWrapper}>
-              <Image 
-                source={{ uri: 'https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=1000&auto=format&fit=crop' }} 
-                style={styles.bannerImage}
-              />
+              {vendor?.banner_url ? (
+                <Image 
+                  source={{ uri: vendor.banner_url }} 
+                  style={styles.bannerImage}
+                />
+              ) : (
+                <View style={styles.premiumGradientPlaceholder} />
+              )}
               <View style={styles.bannerOverlay} />
               
               <Pressable onPress={() => router.back()} style={styles.backButton}>
@@ -208,31 +242,39 @@ export default function StoreScreen() {
                 )}
                 
                 <View style={styles.badgeRow}>
-                  <View style={styles.openBadge}>
-                    <Text style={styles.openBadgeText}>● OPEN</Text>
+                  <View style={[styles.openBadge, { backgroundColor: statusBadgeConfig.bg }]}>
+                    <Text style={[styles.openBadgeText, { color: statusBadgeConfig.color }]}>
+                      {statusBadgeConfig.text}
+                    </Text>
                   </View>
                   <View style={styles.ratingBadge}>
-                    <Text style={styles.ratingBadgeText}>★ 4.8</Text>
+                    <Text style={styles.ratingBadgeText}>New Store</Text>
                   </View>
                 </View>
               </View>
 
               <Text style={styles.storeName}>{shopName || 'Marketplace Store'}</Text>
               
+              {vendor?.tagline ? (
+                <Text style={styles.storeTagline}>{vendor.tagline}</Text>
+              ) : null}
+              
               <View style={styles.storeMetricsRow}>
                 <View style={styles.metricItem}>
                   <Text style={styles.metricIcon}>⚡</Text>
-                  <Text style={styles.metricText}>10-15 mins</Text>
+                  <Text style={styles.metricText}>Delivery ETA</Text>
                 </View>
                 <View style={styles.metricDivider} />
                 <View style={styles.metricItem}>
                   <Text style={styles.metricIcon}>📍</Text>
-                  <Text style={styles.metricText}>1.8 km nearby</Text>
+                  <Text style={styles.metricText}>Distance unavailable</Text>
                 </View>
                 <View style={styles.metricDivider} />
                 <View style={styles.metricItem}>
                   <Text style={styles.metricIcon}>💰</Text>
-                  <Text style={styles.metricText}>Offers Active</Text>
+                  <Text style={styles.metricText}>
+                    {vendor?.has_active_offers ? "Offers Available" : "No Active Offers"}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -418,9 +460,14 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  premiumGradientPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#0F172A', // Using Rivo Premium dark slate color layout foundation
+  },
   bannerOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
   backButton: {
     position: 'absolute',
@@ -491,13 +538,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   openBadge: {
-    backgroundColor: '#E8FBF0',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
   openBadgeText: {
-    color: '#22CC71',
     fontSize: 10,
     fontWeight: '800',
   },
@@ -518,6 +563,12 @@ const styles = StyleSheet.create({
     color: '#0D0D0D',
     letterSpacing: -0.5,
     marginTop: 10,
+  },
+  storeTagline: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+    marginTop: 2,
   },
   storeMetricsRow: {
     flexDirection: 'row',

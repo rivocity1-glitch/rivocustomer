@@ -6,10 +6,8 @@ import {
   Alert,
   Animated,
   Clipboard,
-  Image,
   Linking,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -62,7 +60,8 @@ export default function CheckoutScreen() {
     orderNumber: string;
     totalAmount: number;
     eta: string;
-    paymentMethod: 'cod' | 'upi';
+    paymentMethod: 'cod' | 'online';
+    otp: string;
   } | null>(null);
 
   const [vendorPlanName, setVendorPlanName] = useState<string>('free');
@@ -71,12 +70,21 @@ export default function CheckoutScreen() {
   const [platformFee, setPlatformFee] = useState<number>(0);
   const [deliveryConfig, setDeliveryConfig] = useState<DeliveryConfig | null>(null);
 
-  // UPI payment specific states
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi'>('cod');
-  const [upiSettings, setUpiSettings] = useState<{ qr_code_url?: string; upi_id?: string; merchant_name?: string } | null>(null);
+  // Modern payment specific states
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
+  const [selectedOnlineApp, setSelectedOnlineApp] = useState<'gpay' | 'phonepe' | null>(null);
+  
+  // Specific states gathered directly from active contextual vendor relational parameters
+  const [vendorUpiId, setVendorUpiId] = useState<string>('');
+  const [vendorShopName, setVendorShopName] = useState<string>('');
   
   // Track deep link handoff state
   const [paymentSubmitted, setPaymentSubmitted] = useState(false);
+
+  // Pre-generate order number so it can be safely referenced in the transaction note (tn) prior to submission
+  const preGeneratedOrderNumber = useMemo(() => {
+    return 'ORD-' + Math.floor(100000 + Math.random() * 900000);
+  }, []);
 
   // Animation values for success state
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -200,21 +208,6 @@ export default function CheckoutScreen() {
         });
       }
 
-      // Fetch UPI settings from platform_settings
-      const { data: platformSettingsData } = await supabase
-        .from('platform_settings')
-        .select('setting_key, setting_value');
-
-      if (platformSettingsData) {
-        const upiObj: any = {};
-        platformSettingsData.forEach((setting) => {
-          if (setting.setting_key === 'qr_code_url' || setting.setting_key === 'upi_id' || setting.setting_key === 'merchant_name') {
-            upiObj[setting.setting_key] = setting.setting_value;
-          }
-        });
-        setUpiSettings(upiObj);
-      }
-
       const { data: { user }, error: userError } = await supabase.auth.getUser();
 
       if (userError || !user) {
@@ -259,17 +252,27 @@ export default function CheckoutScreen() {
 
       if (cart.length > 0) {
         const vendorId = cart[0].vendor_id;
+        
         const { data: vendorProfile, error: vendorError } = await supabase
           .from('vendor_profiles')
-          .select('latitude, longitude')
+          .select('latitude, longitude, upi_id, vendors(shop_name)')
           .eq('vendor_id', vendorId)
           .maybeSingle();
 
-        if (!vendorError && vendorProfile?.latitude && vendorProfile?.longitude) {
-          setVendorLocation({
-            latitude: Number(vendorProfile.latitude),
-            longitude: Number(vendorProfile.longitude),
-          });
+        if (!vendorError && vendorProfile) {
+          if (vendorProfile.latitude && vendorProfile.longitude) {
+            setVendorLocation({
+              latitude: Number(vendorProfile.latitude),
+              longitude: Number(vendorProfile.longitude),
+            });
+          }
+          if (vendorProfile.upi_id) {
+            setVendorUpiId(vendorProfile.upi_id);
+          }
+          const nestedVendorObj: any = vendorProfile.vendors;
+          if (nestedVendorObj && nestedVendorObj.shop_name) {
+            setVendorShopName(nestedVendorObj.shop_name);
+          }
         }
 
         try {
@@ -365,64 +368,33 @@ export default function CheckoutScreen() {
     setShowAddressForm(false);
   };
 
-  function handleCopyUpiId() {
-    if (upiSettings?.upi_id) {
-      Clipboard.setString(upiSettings.upi_id);
-      Alert.alert('Copied', 'UPI ID copied to clipboard successfully.');
+  async function handleUpiPayment(app: "gpay" | "phonepe") {
+    const targetUpiId = vendorUpiId || 'merchant@upi';
+    const targetShopName = vendorShopName || 'Merchant Partner';
+    const amountValue = checkoutCharges.grandTotal.toString();
+
+    const upiUri = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(targetShopName)}&am=${encodeURIComponent(amountValue)}&cu=${encodeURIComponent('INR')}&tn=${encodeURIComponent(preGeneratedOrderNumber)}`;
+    
+    console.log("UPI URI:", upiUri);
+
+    try {
+      await Linking.openURL(upiUri);
+      setSelectedOnlineApp(app);
+      setPaymentSubmitted(true);
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Payment Error", "No compatible UPI application was found.");
     }
   }
 
-  const upiUrlString = useMemo(() => {
-    if (!upiSettings?.upi_id) return '';
-    return `upi://pay?pa=${upiSettings.upi_id}&pn=${encodeURIComponent(upiSettings.merchant_name || 'Merchant')}&am=${checkoutCharges.grandTotal}&cu=INR`;
-  }, [upiSettings, checkoutCharges.grandTotal]);
-
-  const handleGooglePay = async () => {
-    if (!upiUrlString) return;
-    const gpayUrl = Platform.OS === 'ios' ? upiUrlString.replace('upi://', 'gpay://') : upiUrlString;
-    const canOpen = await Linking.canOpenURL(gpayUrl).catch(() => false);
-    if (canOpen) {
-      await Linking.openURL(gpayUrl);
-      setPaymentSubmitted(true);
-    } else {
-      Alert.alert('App Not Found', 'Google Pay is not installed.');
+  // Action function to copy the OTP value to device clipboard node structures securely
+  function handleCopyOtp() {
+    const currentOtp = successOrderDetails?.otp;
+    if (currentOtp) {
+      Clipboard.setString(currentOtp);
+      Alert.alert("Success", "OTP copied successfully.");
     }
-  };
-
-  const handlePhonePe = async () => {
-    if (!upiUrlString) return;
-    const phonepeUrl = Platform.OS === 'ios' ? upiUrlString.replace('upi://', 'phonepe://') : upiUrlString;
-    const canOpen = await Linking.canOpenURL(phonepeUrl).catch(() => false);
-    if (canOpen) {
-      await Linking.openURL(phonepeUrl);
-      setPaymentSubmitted(true);
-    } else {
-      Alert.alert('App Not Found', 'PhonePe is not installed.');
-    }
-  };
-
-  const handlePaytm = async () => {
-    if (!upiUrlString) return;
-    const paytmUrl = Platform.OS === 'ios' ? upiUrlString.replace('upi://', 'paytmmp://') : upiUrlString;
-    const canOpen = await Linking.canOpenURL(paytmUrl).catch(() => false);
-    if (canOpen) {
-      await Linking.openURL(paytmUrl);
-      setPaymentSubmitted(true);
-    } else {
-      Alert.alert('App Not Found', 'Paytm is not installed.');
-    }
-  };
-
-  const handleOtherUpi = async () => {
-    if (!upiUrlString) return;
-    const canOpen = await Linking.canOpenURL(upiUrlString).catch(() => false);
-    if (canOpen) {
-      await Linking.openURL(upiUrlString);
-      setPaymentSubmitted(true);
-    } else {
-      Alert.alert('App Link Error', 'Could not open any compatible UPI client apps.');
-    }
-  };
+  }
 
   async function placeOrder() {
     if (isPlacingOrder) return;
@@ -457,13 +429,15 @@ export default function CheckoutScreen() {
         return;
       }
 
-      const orderNumber = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
       const vendorId = cart[0].vendor_id;
+      
+      // Generate a random 6-digit numeric OTP and save to orders.delivery_code
+      const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert({
-          order_number: orderNumber,
+          order_number: preGeneratedOrderNumber,
           customer_id: testCustomer.id,
           customer_auth_id: userData.user.id,
           vendor_id: vendorId,
@@ -482,6 +456,7 @@ export default function CheckoutScreen() {
           settled_vendor: false,
           settled_rider: false,
           payment_method: paymentMethod,
+          delivery_code: randomOtp,
         })
         .select()
         .single();
@@ -498,7 +473,7 @@ export default function CheckoutScreen() {
       const paymentPayload: any = {
         order_id: orderData.id,
         amount: checkoutCharges.grandTotal,
-        payment_method: paymentMethod === 'cod' ? 'COD' : 'UPI',
+        payment_method: paymentMethod === 'cod' ? 'COD' : 'ONLINE',
         payment_status: 'pending',
       };
 
@@ -525,10 +500,11 @@ export default function CheckoutScreen() {
 
       setSuccessOrderDetails({
         orderId: orderData.id,
-        orderNumber: orderNumber,
+        orderNumber: preGeneratedOrderNumber,
         totalAmount: checkoutCharges.grandTotal,
         eta: '5-15 mins',
         paymentMethod: paymentMethod,
+        otp: randomOtp,
       });
     } catch (error) {
       console.error('Error placing order:', error);
@@ -762,6 +738,7 @@ export default function CheckoutScreen() {
           </View>
         </View>
 
+        {/* Payment Methods */}
         <View style={styles.card}>
           <Text style={styles.sectionHeader}>🎒 Payment Method</Text>
           
@@ -782,126 +759,60 @@ export default function CheckoutScreen() {
           </Pressable>
 
           <Pressable 
-            onPress={() => setPaymentMethod('upi')}
+            onPress={() => setPaymentMethod('online')}
             style={({ pressed }) => [
               styles.row, 
-              paymentMethod === 'upi' ? styles.paymentOptionSelected : styles.paymentOptionUnselected,
-              { marginBottom: 12 },
+              paymentMethod === 'online' ? styles.paymentOptionSelected : styles.paymentOptionUnselected,
               pressed && styles.microInteractionState
             ]}
           >
-            <View style={paymentMethod === 'upi' ? styles.radioFilled : styles.radioEmpty} />
-            <Text style={styles.paymentMethodNameText}>UPI</Text>
+            <View style={paymentMethod === 'online' ? styles.radioFilled : styles.radioEmpty} />
+            <Text style={styles.paymentMethodNameText}>Online Payment</Text>
           </Pressable>
 
-          {paymentMethod === 'upi' && (
-            <View style={styles.upiPaymentContainer}>
-              
-              {/* Clean White Payment Card */}
-              <View style={styles.cleanWhitePaymentCard}>
-                <View style={[styles.row, { justifyContent: 'space-between', marginBottom: 6 }]}>
-                  <Text style={styles.whiteCardAmountLabel}>Amount to Pay</Text>
-                  <Text style={styles.whiteCardAmountValue}>₹{checkoutCharges.grandTotal}</Text>
+          {paymentMethod === 'online' && (
+            <View style={styles.modernAppsContainer}>
+              {/* Google Pay Card */}
+              <Pressable
+                onPress={() => handleUpiPayment("gpay")}
+                style={({ pressed }) => [
+                  styles.modernAppCard,
+                  selectedOnlineApp === 'gpay' && styles.modernAppCardSelected,
+                  pressed && styles.microInteractionState
+                ]}
+              >
+                <View style={[styles.appIconCircle, { backgroundColor: '#EAEFFF' }]}>
+                  <Text style={[styles.appIconInitial, { color: '#2563EB' }]}>G</Text>
                 </View>
-                
-                <View style={styles.whiteCardDivider} />
-                
-                <Text style={styles.whiteCardSecuredText}>Pay securely using any UPI app.</Text>
+                <View style={styles.appTextDetails}>
+                  <Text style={styles.appNameTitle}>Google Pay</Text>
+                  <Text style={styles.appSubtitleText}>Pay securely using Google Pay</Text>
+                </View>
+              </Pressable>
 
-                {paymentSubmitted ? (
-                  <View style={styles.statusInfoBox}>
-                    <Text style={styles.statusTitle}>Payment Submitted</Text>
-                    <Text style={styles.statusDescription}>
-                      We're confirming your payment.
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={styles.upiAppsGrid}>
-                    <Pressable onPress={handleGooglePay} style={styles.upiGridItemButton}>
-                      <View style={[styles.appIconCircle, { backgroundColor: '#EAEFFF' }]}>
-                        <Text style={[styles.appIconInitial, { color: '#2563EB' }]}>G</Text>
-                      </View>
-                      <Text style={styles.upiGridItemText}>Google Pay</Text>
-                    </Pressable>
-
-                    <Pressable onPress={handlePhonePe} style={styles.upiGridItemButton}>
-                      <View style={[styles.appIconCircle, { backgroundColor: '#F5EFFF' }]}>
-                        <Text style={[styles.appIconInitial, { color: '#7C3AED' }]}>P</Text>
-                      </View>
-                      <Text style={styles.upiGridItemText}>PhonePe</Text>
-                    </Pressable>
-
-                    <Pressable onPress={handlePaytm} style={styles.upiGridItemButton}>
-                      <View style={[styles.appIconCircle, { backgroundColor: '#E6F7FF' }]}>
-                        <Text style={[styles.appIconInitial, { color: '#00BAF2' }]}>P</Text>
-                      </View>
-                      <Text style={styles.upiGridItemText}>Paytm</Text>
-                    </Pressable>
-
-                    <Pressable onPress={handleOtherUpi} style={styles.upiGridItemButton}>
-                      <View style={[styles.appIconCircle, { backgroundColor: '#F1F5F9' }]}>
-                        <Text style={[styles.appIconInitial, { color: '#475569' }]}>★</Text>
-                      </View>
-                      <Text style={styles.upiGridItemText}>Other UPI Apps</Text>
-                    </Pressable>
-                  </View>
-                )}
-
-                <Pressable onPress={handleCopyUpiId} style={styles.copyUpiTextButton}>
-                  <Text style={styles.copyUpiTextButtonText}>Copy UPI ID</Text>
-                </Pressable>
-              </View>
-
-              {/* QR Layout */}
-              <View style={styles.qrContainer}>
-                {upiSettings?.qr_code_url ? (
-                  <Image 
-                    source={{ uri: upiSettings.qr_code_url }} 
-                    style={styles.qrCodeImage} 
-                    resizeMode="contain" 
-                  />
-                ) : (
-                  <View style={styles.qrUnavailablePlaceholder}>
-                    <Text style={styles.qrUnavailableLabel}>QR temporarily unavailable</Text>
-                  </View>
-                )}
-              </View>
+              {/* PhonePe Card */}
+              <Pressable
+                onPress={() => handleUpiPayment("phonepe")}
+                style={({ pressed }) => [
+                  styles.modernAppCard,
+                  selectedOnlineApp === 'phonepe' && styles.modernAppCardSelected,
+                  pressed && styles.microInteractionState
+                ]}
+              >
+                <View style={[styles.appIconCircle, { backgroundColor: '#F5EFFF' }]}>
+                  <Text style={[styles.appIconInitial, { color: '#7C3AED' }]}>P</Text>
+                </View>
+                <View style={styles.appTextDetails}>
+                  <Text style={styles.appNameTitle}>PhonePe</Text>
+                  <Text style={styles.appSubtitleText}>Pay securely using PhonePe</Text>
+                </View>
+              </Pressable>
             </View>
           )}
-
-          <View style={[styles.row, styles.paymentOptionDisabled, { marginTop: 12, marginBottom: 12 }]}>
-            <View style={styles.row}>
-              <View style={styles.radioEmpty} />
-              <Text style={styles.paymentMethodDisabledText}>Cards</Text>
-            </View>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Coming Soon</Text>
-            </View>
-          </View>
-
-          <View style={[styles.row, styles.paymentOptionDisabled, { marginBottom: 12 }]}>
-            <View style={styles.row}>
-              <View style={styles.radioEmpty} />
-              <Text style={styles.paymentMethodDisabledText}>Wallets</Text>
-            </View>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Coming Soon</Text>
-            </View>
-          </View>
-
-          <View style={[styles.row, styles.paymentOptionDisabled]}>
-            <View style={styles.row}>
-              <View style={styles.radioEmpty} />
-              <Text style={styles.paymentMethodDisabledText}>EMI</Text>
-            </View>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Coming Soon</Text>
-            </View>
-          </View>
         </View>
       </ScrollView>
 
-      {/* Modernized Blinkit/Zepto Style Sticky Footer Panel */}
+      {/* Sticky Footer Panel */}
       <View style={styles.stickyFooterPanel}>
         <View style={styles.stickyFooterLeft}>
           <Text style={styles.orderTotalTitleLabel}>Order Total</Text>
@@ -942,75 +853,108 @@ export default function CheckoutScreen() {
               }
             ]}
           >
-            <Animated.View 
-              style={[
-                styles.successScreenBadgeCircle,
-                {
-                  transform: [
-                    {
-                      scale: checkmarkBounce.interpolate({
-                        inputRange: [0, 0.5, 0.8, 1],
-                        outputRange: [0.3, 1.2, 0.95, 1]
-                      })
-                    }
-                  ]
-                }
-              ]}
-            >
-              <Text style={styles.successBadgeText}>✓</Text>
-            </Animated.View>
+            <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+              <Animated.View 
+                style={[
+                  styles.successScreenBadgeCircle,
+                  {
+                    transform: [
+                      {
+                        scale: checkmarkBounce.interpolate({
+                          inputRange: [0, 0.5, 0.8, 1],
+                          outputRange: [0.3, 1.2, 0.95, 1]
+                        })
+                      }
+                    ]
+                  }
+                ]}
+              >
+                <Text style={styles.successBadgeText}>✓</Text>
+              </Animated.View>
 
-            <Text style={styles.successTitle}>Thank you for choosing Rivo ❤️</Text>
-            <Text style={styles.successSubtitle}>
-              See you again in {address?.city || 'your city'} 👋
-            </Text>
+              <Text style={styles.successTitle}>Thank you for choosing Rivo ❤️</Text>
+              <Text style={styles.successSubtitle}>
+                See you again in {address?.city || 'your city'} 👋
+              </Text>
 
-            <View style={styles.successMetaCard}>
-              <View style={[styles.row, styles.metaItemRow]}>
-                <Text style={styles.metaCardLabel}>Order Number</Text>
-                <Text style={styles.metaCardValue}>{successOrderDetails?.orderNumber}</Text>
+              <View style={styles.successMetaCard}>
+                <View style={[styles.row, styles.metaItemRow]}>
+                  <Text style={styles.metaCardLabel}>Order Number</Text>
+                  <Text style={styles.metaCardValue}>{successOrderDetails?.orderNumber}</Text>
+                </View>
+                <View style={styles.metaItemSeparator} />
+                <View style={[styles.row, styles.metaItemRow]}>
+                  <Text style={styles.metaCardLabel}>Estimated Delivery</Text>
+                  <Text style={styles.metaCardValue}>{successOrderDetails?.eta}</Text>
+                </View>
+                <View style={styles.metaItemSeparator} />
+                <View style={[styles.row, styles.metaItemRow]}>
+                  <Text style={styles.metaCardLabel}>Total Paid</Text>
+                  <Text style={styles.metaCardValueHighlight}>₹{successOrderDetails?.totalAmount}</Text>
+                </View>
+                <View style={styles.metaItemSeparator} />
+                <View style={[styles.row, styles.metaItemRow]}>
+                  <Text style={styles.metaCardLabel}>Payment Method</Text>
+                  <Text style={styles.metaCardValue}>
+                    {successOrderDetails?.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment'}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.metaItemSeparator} />
-              <View style={[styles.row, styles.metaItemRow]}>
-                <Text style={styles.metaCardLabel}>Estimated Delivery</Text>
-                <Text style={styles.metaCardValue}>{successOrderDetails?.eta}</Text>
-              </View>
-              <View style={styles.metaItemSeparator} />
-              <View style={[styles.row, styles.metaItemRow]}>
-                <Text style={styles.metaCardLabel}>Total Paid</Text>
-                <Text style={styles.metaCardValueHighlight}>₹{successOrderDetails?.totalAmount}</Text>
-              </View>
-              <View style={styles.metaItemSeparator} />
-              <View style={[styles.row, styles.metaItemRow]}>
-                <Text style={styles.metaCardLabel}>Payment Method</Text>
-                <Text style={styles.metaCardValue}>
-                  {successOrderDetails?.paymentMethod === 'cod' ? 'Cash on Delivery' : 'UPI'}
+
+              {/* Target Requirement 1 & 6: Modern dynamic Delivery OTP details card container */}
+              <View style={styles.otpCardWrapper}>
+                <Text style={styles.otpSectionTitle}>Delivery OTP</Text>
+                <Text style={styles.otpSectionSubtitle}>
+                  Share this OTP with the rider ONLY after receiving your complete order.
+                </Text>
+
+                {/* Target Requirement 2 & 8: Large light-green pill code visualizer with validation state safe-guard */}
+                <View style={styles.otpValuePillBox}>
+                  <Text style={styles.otpLargeDigitsText}>
+                    {successOrderDetails?.otp ? successOrderDetails.otp : "Generating OTP..."}
+                  </Text>
+                </View>
+
+                {/* Target Requirement 3: Expo Clipboard Copy action component */}
+                <Pressable 
+                  onPress={handleCopyOtp} 
+                  style={({ pressed }) => [styles.copyOtpInlineTextBtn, pressed && styles.microInteractionState]}
+                >
+                  <Text style={styles.copyOtpInlineTextBtnLabel}>[ Copy OTP ]</Text>
+                </Pressable>
+
+                {/* Target Requirement 4: Essential contextual safety warning node block */}
+                <View style={styles.otpSafetyNoticeDivider} />
+                <Text style={styles.otpSafetyNoticeHeading}>Security</Text>
+                <Text style={styles.otpSafetyNoticeDescription}>
+                  Never share this OTP before you receive your complete order.
                 </Text>
               </View>
-            </View>
 
-            <Pressable
-              style={({ pressed }) => [styles.trackOrderButton, pressed && styles.microInteractionState]}
-              onPress={() => {
-                const oId = successOrderDetails?.orderId;
-                setSuccessOrderDetails(null);
-                if (oId) {
-                  router.replace({ pathname: '/orders/[id]', params: { id: oId } });
-                }
-              }}
-            >
-              <Text style={styles.trackOrderButtonText}>Track Order</Text>
-            </Pressable>
+              {/* Target Requirement 5: Existing interactive functional process nodes maintained without alteration */}
+              <Pressable
+                style={({ pressed }) => [styles.trackOrderButton, pressed && styles.microInteractionState]}
+                onPress={() => {
+                  const oId = successOrderDetails?.orderId;
+                  setSuccessOrderDetails(null);
+                  if (oId) {
+                    router.replace({ pathname: '/orders/[id]', params: { id: oId } });
+                  }
+                }}
+              >
+                <Text style={styles.trackOrderButtonText}>Track Order</Text>
+              </Pressable>
 
-            <Pressable
-              style={({ pressed }) => [styles.returnShoppingButton, pressed && styles.microInteractionState]}
-              onPress={() => {
-                setSuccessOrderDetails(null);
-                router.replace('/');
-              }}
-            >
-              <Text style={styles.returnShoppingButtonText}>Continue Shopping</Text>
-            </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.returnShoppingButton, pressed && styles.microInteractionState]}
+                onPress={() => {
+                  setSuccessOrderDetails(null);
+                  router.replace('/');
+                }}
+              >
+                <Text style={styles.returnShoppingButtonText}>Continue Shopping</Text>
+              </Pressable>
+            </ScrollView>
           </Animated.View>
         </View>
       </Modal>
@@ -1319,15 +1263,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1E293B',
   },
-  paymentOptionDisabled: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 14,
-    padding: 16,
-    justifyContent: 'space-between',
-    opacity: 0.5,
-  },
   radioEmpty: {
     width: 18,
     height: 18,
@@ -1335,22 +1270,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#CBD5E1',
     marginRight: 12,
-  },
-  paymentMethodDisabledText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#64748B',
-  },
-  comingSoonBadge: {
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  comingSoonText: {
-    fontSize: 10,
-    color: '#475569',
-    fontWeight: '700',
   },
   stickyFooterPanel: {
     position: 'absolute',
@@ -1387,9 +1306,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#0F172A',
   },
-  stickyTotalSubText: {
-    display: 'none',
-  },
   stickyOrderPlacementButton: {
     backgroundColor: '#10B981',
     paddingHorizontal: 28,
@@ -1424,15 +1340,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 40,
   },
   successScreenCardContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
-    padding: 24,
+    padding: 20,
     width: '100%',
-    maxWidth: 360,
-    alignItems: 'center',
+    maxWidth: 380,
+    maxHeight: '90%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.08,
@@ -1447,6 +1364,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    marginTop: 10,
   },
   successBadgeText: {
     fontSize: 28,
@@ -1474,7 +1392,7 @@ const styles = StyleSheet.create({
     width: '100%',
     padding: 16,
     marginTop: 20,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   metaItemRow: {
     justifyContent: 'space-between',
@@ -1507,6 +1425,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginBottom: 10,
+    marginTop: 10,
   },
   trackOrderButtonText: {
     color: '#FFFFFF',
@@ -1521,133 +1440,141 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    marginBottom: 15,
   },
   returnShoppingButtonText: {
     color: '#475569',
     fontSize: 13,
     fontWeight: '600',
   },
-  upiPaymentContainer: {
+  appIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  appIconInitial: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modernAppsContainer: {
     marginTop: 14,
     paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
   },
-  cleanWhitePaymentCard: {
+  modernAppCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  whiteCardAmountLabel: {
-    color: '#64748B',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  whiteCardAmountValue: {
-    color: '#0F172A',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  whiteCardDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 12,
-  },
-  whiteCardSecuredText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '600',
-    marginBottom: 14,
-  },
-  statusInfoBox: {
+  modernAppCardSelected: {
+    borderColor: '#10B981',
+    borderWidth: 2,
     backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#DCFCE7',
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
   },
-  statusTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#15803D',
-    marginBottom: 2,
-  },
-  statusDescription: {
-    fontSize: 12,
-    color: '#166534',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  upiAppsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  upiGridItemButton: {
-    width: '48%',
-    backgroundColor: '#FAFAFA',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  appIconCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  appIconInitial: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  upiGridItemText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
+  appTextDetails: {
     flex: 1,
   },
-  copyUpiTextButton: {
-    alignSelf: 'center',
-    marginTop: 6,
-    padding: 4,
+  appNameTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
   },
-  copyUpiTextButtonText: {
+  appSubtitleText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  otpCardWrapper: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    width: '100%',
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  otpSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  otpSectionSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 16,
+    marginBottom: 14,
+  },
+  otpValuePillBox: {
+    backgroundColor: '#E6F4EA',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    alignSelf: 'center',
+    minWidth: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  otpLargeDigitsText: {
+    fontSize: 38,
+    fontWeight: '900',
+    color: '#137333',
+    letterSpacing: 4,
+    textAlign: 'center',
+  },
+  copyOtpInlineTextBtn: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginBottom: 6,
+  },
+  copyOtpInlineTextBtnLabel: {
     color: '#10B981',
     fontSize: 13,
     fontWeight: '700',
+    textAlign: 'center',
   },
-  qrContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
+  otpSafetyNoticeDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 10,
   },
-  qrCodeImage: {
-    width: 150,
-    height: 150,
-  },
-  qrUnavailablePlaceholder: {
-    width: '100%',
-    height: 60,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  qrUnavailableLabel: {
+  otpSafetyNoticeHeading: {
     fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: '600',
+    fontWeight: '700',
+    color: '#DC2626',
+    marginBottom: 2,
+  },
+  otpSafetyNoticeDescription: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+    lineHeight: 15,
   },
 });

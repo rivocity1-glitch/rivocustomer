@@ -1,8 +1,12 @@
+// src/app/orders/[id].tsx
+import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Dimensions,
+  Linking,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -10,7 +14,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -33,8 +37,12 @@ interface OrderDetails {
   payment_status: string;
   order_status: string;
   created_at: string;
+  delivery_code: string | null;
+  vendor_id: string;
+  rider_id: string | null;
   vendors: {
     shop_name: string;
+    phone?: string;
   } | null;
   customer_addresses: {
     address_line1: string;
@@ -45,6 +53,13 @@ interface OrderDetails {
     pin_code: string;
   } | null;
   order_items: OrderItem[];
+  riders?: {
+    rider_name: string;
+    phone: string;
+    rating?: number;
+    vehicle_type?: string;
+    vehicle_number?: string;
+  } | null;
 }
 
 interface TrackingMilestone {
@@ -62,6 +77,7 @@ export default function OrderTrackingScreen() {
   const [timeline, setTimeline] = useState<TrackingMilestone[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Animations System
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -72,7 +88,7 @@ export default function OrderTrackingScreen() {
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.08, duration: 800, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
       ])
     ).start();
@@ -94,7 +110,7 @@ export default function OrderTrackingScreen() {
     try {
       if (!id) return;
 
-      // 1. Fetch deep integrated order layout data[cite: 17]
+      // 1. Fetch deep integrated order layout data with corrected rider metrics schema columns
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .select(`
@@ -106,7 +122,10 @@ export default function OrderTrackingScreen() {
           payment_status,
           order_status,
           created_at,
-          vendors ( shop_name ),
+          delivery_code,
+          vendor_id,
+          rider_id,
+          vendors ( shop_name, phone ),
           customer_addresses ( address_line1, address_line2, landmark, city, state, pin_code ),
           order_items (
             id,
@@ -114,7 +133,8 @@ export default function OrderTrackingScreen() {
             unit_price,
             total_price,
             product:products ( name )
-          )
+          ),
+          riders ( rider_name, phone, rating, vehicle_type, vehicle_number )
         `)
         .eq('id', id)
         .maybeSingle();
@@ -122,7 +142,7 @@ export default function OrderTrackingScreen() {
       if (orderError) throw orderError;
       setOrder(orderData as unknown as OrderDetails);
 
-      // 2. Fetch tracking milestones[cite: 17]
+      // 2. Fetch tracking milestones
       const { data: trackingData, error: trackingError } = await supabase
         .from('order_tracking')
         .select('id, order_id, status, created_at')
@@ -148,7 +168,7 @@ export default function OrderTrackingScreen() {
 
     if (!id) return;
 
-    // Set up Realtime listener targeting current order changes[cite: 17]
+    // Set up Realtime listener targeting current order changes
     const orderSubscription = supabase
       .channel(`order-status-channel-${id}`)
       .on(
@@ -160,34 +180,14 @@ export default function OrderTrackingScreen() {
           filter: `id=eq.${id}`,
         },
         (payload) => {
-          console.log('Realtime order status stream update payload received:', payload);
+          console.log('Realtime order status stream payload update:', payload);
           if (payload.new) {
-            // Hot swap structural mutations into existing localized memory configurations[cite: 17]
-            setOrder((prev) => {
-              if (!prev) return null;
-              return {
-                ...prev,
-                order_status: payload.new.order_status ?? prev.order_status,
-                payment_status: payload.new.payment_status ?? prev.payment_status,
-              };
-            });
-            
-            // Re-fetch milestones to sync up the physical database updates seamlessly[cite: 17]
-            const fetchMilestonesSilently = async () => {
-              const { data } = await supabase
-                .from('order_tracking')
-                .select('id, order_id, status, created_at')
-                .eq('order_id', id)
-                .order('created_at', { ascending: true });
-              if (data) setTimeline(data);
-            };
-            fetchMilestonesSilently();
+            fetchOrderAndTrackingDetails();
           }
         }
       )
       .subscribe();
 
-    // Cleanup subscription pipeline stack reference mappings on component teardown[cite: 17]
     return () => {
       supabase.removeChannel(orderSubscription);
     };
@@ -196,6 +196,71 @@ export default function OrderTrackingScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchOrderAndTrackingDetails();
+  };
+
+  const handleCopyOtp = async (code: string) => {
+    await Clipboard.setStringAsync(code);
+    Alert.alert("Success", "OTP copied successfully.");
+  };
+
+  const handleCallRider = () => {
+    if (order?.riders?.phone) {
+      Linking.openURL(`tel:${order.riders.phone}`);
+    } else {
+      Alert.alert("Notice", "Rider contact unavailable.");
+    }
+  };
+
+  const handleCallStore = () => {
+    if (order?.vendors?.phone) {
+      Linking.openURL(`tel:${order.vendors.phone}`);
+    } else {
+      Alert.alert("Notice", "Store phone number unavailable.");
+    }
+  };
+
+  const handleCancelOrder = () => {
+    Alert.alert(
+      "Cancel this order?",
+      "This action cannot be undone.",
+      [
+        { text: "Keep Order", style: "cancel" },
+        { 
+          text: "Cancel Order", 
+          style: "destructive",
+          onPress: executeCancellation 
+        }
+      ]
+    );
+  };
+
+  const executeCancellation = async () => {
+    if (!id || isCancelling) return;
+    try {
+      setIsCancelling(true);
+      
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ order_status: 'cancelled' })
+        .eq('id', id);
+
+      if (updateError) throw updateError;
+
+      await supabase
+        .from('order_tracking')
+        .insert({
+          order_id: id,
+          status: 'cancelled'
+        });
+
+      Alert.alert("Success", "Order cancelled successfully.");
+      fetchOrderAndTrackingDetails();
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Could not cancel order at this stage.");
+    } finally {
+      setIsCancelling(false);
+    }
   };
 
   const formatStatus = (status: string) => {
@@ -239,7 +304,6 @@ export default function OrderTrackingScreen() {
     return `${dayAndYear}, ${time}`;
   };
 
-  // Generate a computed timeline layout if tracking data is empty[cite: 17]
   const computedTimeline = useMemo(() => {
     if (timeline.length > 0) return timeline;
     if (!order) return [];
@@ -269,7 +333,6 @@ export default function OrderTrackingScreen() {
     });
   }, [timeline, order]);
 
-  // Premium Shimmer Skeleton Loading view logic
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -305,8 +368,14 @@ export default function OrderTrackingScreen() {
     );
   }
 
-  const isCancelled = order.order_status.toLowerCase() === 'cancelled';
-  const isDelivered = order.order_status.toLowerCase() === 'delivered';
+  const currentStatusStr = order.order_status.toLowerCase();
+  const isCancelled = currentStatusStr === 'cancelled';
+  const isDelivered = currentStatusStr === 'delivered';
+  
+  const showOtpLayout = !isDelivered && !isCancelled;
+  const isCancellationAllowed = ['pending', 'accepted', 'preparing'].includes(currentStatusStr);
+  const showLiveMap = currentStatusStr === 'out_for_delivery';
+  const isRiderAssigned = !!order.riders && !!order.rider_id;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -315,7 +384,7 @@ export default function OrderTrackingScreen() {
         <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backButtonIcon, pressed && styles.pressedMicro]}>
           <Text style={styles.backButtonTextSymbol}>←</Text>
         </Pressable>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Track Order</Text>
           <Text style={styles.headerSubtitle}>ID reference: #{order.order_number}</Text>
         </View>
@@ -329,7 +398,7 @@ export default function OrderTrackingScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22CC71" />
           }
         >
-          {/* LARGE HERO STATUS CARD */}
+          {/* HERO STATUS CARD */}
           <View style={styles.heroStatusCard}>
             <View style={styles.heroMainRow}>
               <View style={{ flex: 1, marginRight: 8 }}>
@@ -354,22 +423,51 @@ export default function OrderTrackingScreen() {
               <Text style={styles.etaTimeText}>{isDelivered ? 'Arrived Safely' : isCancelled ? 'Order Terminal' : 'Within 10-15 Mins'}</Text>
             </View>
 
-            {/* Delivery Progress Line Accent */}
             {!isCancelled && !isDelivered && (
               <View style={styles.progressLineContainer}>
                 <View style={styles.progressBarBackground}>
-                  <View style={[styles.progressBarFill, { width: order.order_status.toLowerCase() === 'out_for_delivery' ? '85%' : order.order_status.toLowerCase() === 'packed' ? '60%' : '35%' }]} />
+                  <View style={[styles.progressBarFill, { width: currentStatusStr === 'out_for_delivery' ? '85%' : currentStatusStr === 'packed' ? '60%' : '35%' }]} />
                 </View>
                 <Text style={styles.progressMicroNotice}>⚡ Rivo priority fulfillment channel active</Text>
               </View>
             )}
           </View>
 
-          {/* PREMIUM MAP ROUTE PLACEHOLDER */}
-          {!isCancelled && !isDelivered && (
+          {/* DELIVERY OTP CARD */}
+          {showOtpLayout ? (
+            <View style={styles.premiumCard}>
+              <Text style={styles.otpCardTitle}>Delivery OTP</Text>
+              <Text style={styles.otpCardSubtitle}>Share this OTP with the rider ONLY after receiving your complete order.</Text>
+              
+              <View style={styles.otpContainer}>
+                <Text style={styles.otpText}>
+                  {order.delivery_code ? order.delivery_code : "Generating OTP..."}
+                </Text>
+              </View>
+
+              {!!order.delivery_code && (
+                <TouchableOpacity 
+                  style={styles.copyOtpButton} 
+                  activeOpacity={0.7}
+                  onPress={() => handleCopyOtp(order.delivery_code || '')}
+                >
+                  <Text style={styles.copyOtpButtonText}>Copy OTP</Text>
+                </TouchableOpacity>
+              )}
+              
+              <Text style={styles.otpCardWarning}>Never share this OTP before receiving your complete order.</Text>
+            </View>
+          ) : isDelivered ? (
+            <View style={[styles.premiumCard, styles.verifiedGreenCard]}>
+              <Text style={styles.verifiedGreenTitle}>✅ Delivery Verified</Text>
+              <Text style={styles.verifiedGreenSubtitle}>Your delivery was successfully verified.</Text>
+            </View>
+          ) : null}
+
+          {/* MAP VIEW SECTION */}
+          {showLiveMap ? (
             <View style={styles.mapPlaceholderCard}>
               <View style={styles.mapGraphicBackground}>
-                {/* SVG Route Simulation Accent Dots */}
                 <View style={[styles.mapRouteDottedPath, { width: '60%', top: '50%', left: '20%' }]} />
                 <View style={styles.mapRiderMarkerBubble}>
                   <Text style={styles.mapMarkerIcon}>🛵</Text>
@@ -379,65 +477,75 @@ export default function OrderTrackingScreen() {
                 </View>
               </View>
               <View style={styles.mapCaptionBlock}>
-                <Text style={styles.mapCaptionMain}>Ecosystem Fleet Delivery Blueprint</Text>
-                <Text style={styles.mapCaptionSub}>Live courier navigation updates refresh coordinates continuously</Text>
+                <Text style={styles.mapCaptionMain}>Live Rider Tracking Active</Text>
+                <Text style={styles.mapCaptionSub}>Rider is navigating towards your delivery location bounds</Text>
               </View>
             </View>
-          )}
+          ) : !isCancelled && !isDelivered ? (
+            <View style={styles.premiumCard}>
+              <Text style={styles.preparingMapTitle}>Your order is being prepared</Text>
+              <Text style={styles.preparingMapSubtitle}>Live rider tracking will begin once your order is picked up.</Text>
+            </View>
+          ) : null}
 
-          {/* RIDER PANE CARD */}
-          {!isCancelled && (
+          {/* DELIVERY PARTNER PANE */}
+          {currentStatusStr === 'out_for_delivery' && order.rider_id !== null && (
             <View style={styles.premiumEcosystemCard}>
               <View style={styles.cardHeaderFlex}>
                 <View style={styles.avatarCirclePlaceholder}>
                   <Text style={styles.avatarEmojiSymbol}>🚴</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.cardPreHeading}>Rivo Fleet Delivery Pilot</Text>
-                  <Text style={styles.cardMainHeading}>{isDelivered ? 'Fulfillment Executive' : 'Assigning Courier Executive...'}</Text>
-                  <Text style={styles.cardMetaSubText}>⭐ 4.9 Rating • Hero Eco Vehicle</Text>
+                  <Text style={styles.cardPreHeading}>Delivery Partner</Text>
+                  <Text style={styles.cardMainHeading}>{order.riders?.rider_name}</Text>
+                  <Text style={styles.cardMetaSubText}>
+                    {order.riders?.rating == null ? '🟢 New Rider' : `⭐ ${order.riders.rating}`}
+                  </Text>
                 </View>
               </View>
+              
               <View style={styles.cardActionButtonsRow}>
-                <Pressable style={({ pressed }) => [styles.communicationBtn, pressed && styles.microInteraction]}>
-                  <Text style={styles.communicationBtnText}>📞 Call Pilot</Text>
+                <Pressable 
+                  style={({ pressed }) => [styles.communicationBtn, styles.callRiderActiveBtn, pressed && styles.microInteraction]}
+                  onPress={handleCallRider}
+                >
+                  <Text style={styles.callRiderActiveText}>📞 Call Rider</Text>
                 </Pressable>
-                <TouchableOpacity style={[styles.communicationBtn, styles.chatBtnActionAccent]} activeOpacity={0.7}>
-                  <Text style={styles.chatBtnText}>💬 Chat Instant</Text>
-                </TouchableOpacity>
               </View>
             </View>
           )}
 
-          {/* MERCHANT STORE CARD */}
+          {/* STORE CONTACT CARD */}
           <View style={styles.premiumCard}>
             <View style={styles.merchantHeaderBlock}>
               <View style={styles.merchantIconWrapper}>
                 <Text style={styles.merchantIconSymbol}>🏪</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.merchantCardPreTitle}>Fulfilling Hub Partner</Text>
-                <Text style={styles.merchantCardName}>{order.vendors?.shop_name || 'Rivo Elite Hub'}</Text>
+                <Text style={styles.merchantCardPreTitle}>Store</Text>
+                <Text style={styles.merchantCardName}>{order.vendors?.shop_name || 'Rivo Store Hub'}</Text>
               </View>
-              <TouchableOpacity style={styles.merchantCallInlineButton} activeOpacity={0.6}>
+              <TouchableOpacity 
+                style={styles.merchantCallInlineButton} 
+                activeOpacity={0.6}
+                onPress={handleCallStore}
+              >
                 <Text style={styles.merchantCallInlineText}>📞 Contact Store</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* MODERN VERTICAL TRACKING TIMELINE */}
+          {/* ORDER TIMELINE */}
           <View style={styles.premiumCard}>
-            <Text style={styles.sectionHeader}>Tracking Lifecycle Timeline</Text>
+            <Text style={styles.sectionHeader}>Order Timeline</Text>
             <View style={{ paddingLeft: 2, marginTop: 12 }}>
               {computedTimeline.map((milestone, index) => {
                 const isLast = index === computedTimeline.length - 1;
                 const isCompleted = milestone.created_at !== '';
-                const currentStatusStr = order.order_status.toLowerCase();
                 const isCurrent = milestone.status?.toLowerCase() === currentStatusStr || (currentStatusStr === 'packed' && milestone.status?.toLowerCase() === 'preparing');
 
                 return (
                   <View key={milestone.id} style={{ flexDirection: 'row', minHeight: 68 }}>
-                    {/* Left Timeline Node Line Handle System */}
                     <View style={{ alignItems: 'center', marginRight: 16 }}>
                       <View
                         style={[
@@ -457,7 +565,6 @@ export default function OrderTrackingScreen() {
                       )}
                     </View>
 
-                    {/* Right Milestone Content context values */}
                     <View style={{ flex: 1, paddingBottom: isLast ? 0 : 16, paddingTop: 1 }}>
                       <Text
                         style={{
@@ -482,9 +589,9 @@ export default function OrderTrackingScreen() {
             </View>
           </View>
 
-          {/* SHIPPING DESTINATION ADDRESS CARD */}
+          {/* DELIVERY ADDRESS CARD */}
           <View style={styles.premiumCard}>
-            <Text style={styles.sectionHeader}>Delivery Destination Address</Text>
+            <Text style={styles.sectionHeader}>Delivery Address</Text>
             {order.customer_addresses ? (
               <View style={styles.addressBlock}>
                 <Text style={styles.addressText}>{order.customer_addresses.address_line1}</Text>
@@ -501,11 +608,11 @@ export default function OrderTrackingScreen() {
                 </Text>
               </View>
             ) : (
-              <Text style={styles.addressSubtext}>No specified location bounds available.</Text>
+              <Text style={styles.addressSubtext}>No delivery coordinates recorded.</Text>
             )}
           </View>
 
-          {/* ORDER SUMMARY PREMIUM CONTAINER */}
+          {/* ORDER ITEMS SUMMARY */}
           <View style={styles.premiumCard}>
             <Text style={styles.sectionHeader}>Items Summary Checkout</Text>
             <View style={styles.itemsBlockWrapper}>
@@ -515,18 +622,18 @@ export default function OrderTrackingScreen() {
                     <Text style={styles.itemName} numberOfLines={2}>
                       {item.product?.name || 'Essential Product Variant Item'}
                     </Text>
-                    <Text style={styles.itemQuantity}>Qty mapping parameters: {item.quantity} × ₹{item.unit_price}</Text>
+                    <Text style={styles.itemQuantity}>Qty: {item.quantity} × ₹{item.unit_price}</Text>
                   </View>
-                  <Text style={styles.itemTotal}>₹{item.total_price}</Text>
+                  <Text style={styles.itemTotal}>rm ₹{item.total_price}</Text>
                 </View>
               ))}
             </View>
           </View>
 
-          {/* CHARGES BILL SUMMARY BREAKDOWN */}
+          {/* BILL SUMMARY */}
           <View style={styles.premiumCard}>
             <View style={styles.billHeaderFlexRow}>
-              <Text style={styles.sectionHeader}>Bill Details Invoice</Text>
+              <Text style={styles.sectionHeader}>Bill Summary</Text>
               <View style={styles.paymentMethodLabelBadge}>
                 <Text style={styles.paymentMethodTextValue}>{order.payment_status?.toUpperCase() || 'PENDING'}</Text>
               </View>
@@ -554,7 +661,32 @@ export default function OrderTrackingScreen() {
             </View>
           </View>
 
-          {/* HELP SECTION BUTTON PANE */}
+          {/* VIEW INVOICE BUTTON (CONDITIONALLY RENDERED BELOW BILL SUMMARY CARD) */}
+          {order.order_status === "delivered" && (
+            <TouchableOpacity 
+              style={[styles.viewInvoiceButton]} 
+              activeOpacity={0.8}
+              onPress={() => router.push(`/orders/invoice/${order.id}`)}
+            >
+              <Text style={styles.viewInvoiceButtonText}>View Invoice</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* CANCEL ORDER SECTION BUTTON */}
+          {isCancellationAllowed && (
+            <TouchableOpacity 
+              style={styles.cancelOrderOutlineButton} 
+              activeOpacity={0.7}
+              onPress={handleCancelOrder}
+              disabled={isCancelling}
+            >
+              <Text style={styles.cancelOrderOutlineButtonText}>
+                {isCancelling ? "Processing..." : "Cancel Order"}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* HELP ACTIONS SECTION */}
           <View style={styles.helpSectionCard}>
             <Text style={styles.helpTitleHeading}>Need assistance with this order?</Text>
             <Text style={styles.helpSubParagraph}>Our customer delight response desk is active 24/7 to resolve issues instantly.</Text>
@@ -841,31 +973,58 @@ const styles = StyleSheet.create({
   cardActionButtonsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 16,
+    marginTop: 14,
   },
   communicationBtn: {
     flex: 1,
     backgroundColor: '#F7F8FA',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#EAEFF3',
   },
-  communicationBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0D0D0D',
+  callRiderActiveBtn: {
+    backgroundColor: '#22CC71',
+    borderColor: '#22CC71',
   },
-  chatBtnActionAccent: {
-    backgroundColor: '#22CC7110',
-    borderColor: '#22CC7130',
-  },
-  chatBtnText: {
-    fontSize: 13,
+  callRiderActiveText: {
+    fontSize: 14,
     fontWeight: '800',
-    color: '#22CC71',
+    color: '#FFFFFF',
+  },
+  riderStatePlaceholderBox: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  riderStatePlaceholderText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  searchingRiderContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+  },
+  searchingRiderTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  searchingRiderSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 2,
   },
   premiumCard: {
     backgroundColor: '#FFFFFF',
@@ -910,15 +1069,15 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   merchantCallInlineButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 8,
     backgroundColor: '#F7F8FA',
     borderWidth: 1,
     borderColor: '#EAEFF3',
   },
   merchantCallInlineText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#475569',
   },
@@ -1076,6 +1235,20 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#22CC71',
   },
+  viewInvoiceButton: {
+    width: '100%',
+    backgroundColor: '#22CC71',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  viewInvoiceButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
   helpSectionCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
@@ -1183,5 +1356,99 @@ const styles = StyleSheet.create({
   microInteraction: {
     transform: [{ scale: 0.97 }],
     opacity: 0.9,
+  },
+  otpCardTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#1E293B',
+    textAlign: 'center',
+  },
+  otpCardSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 16,
+    fontWeight: '500',
+  },
+  otpContainer: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignSelf: 'center',
+    marginTop: 14,
+    minWidth: 160,
+    alignItems: 'center',
+  },
+  otpText: {
+    fontSize: 36,
+    fontWeight: '900',
+    color: '#10B981',
+    letterSpacing: 4,
+  },
+  copyOtpButton: {
+    alignSelf: 'center',
+    marginTop: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+  },
+  copyOtpButtonText: {
+    color: '#10B981',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  otpCardWarning: {
+    fontSize: 11,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 12,
+    fontWeight: '600',
+  },
+  verifiedGreenCard: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    paddingVertical: 18,
+  },
+  verifiedGreenTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#065F46',
+  },
+  verifiedGreenSubtitle: {
+    fontSize: 13,
+    color: '#047857',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  preparingMapTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#1E293B',
+  },
+  preparingMapSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 4,
+    lineHeight: 16,
+    fontWeight: '500',
+  },
+  cancelOrderOutlineButton: {
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  cancelOrderOutlineButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#EF4444',
   },
 });
