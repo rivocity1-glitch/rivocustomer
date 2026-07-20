@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -9,9 +9,11 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { getUnreadCustomerNotificationCount } from '../services/notificationService';
 
 interface Vendor {
   id: string;
@@ -41,10 +43,50 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   // Animation values
   const searchScale = useMemo(() => new Animated.Value(1), []);
   const searchShadow = useMemo(() => new Animated.Value(2), []);
+
+  // Fetch unread notification count & subscribe to realtime changes
+  useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function initNotificationListener() {
+      const count = await getUnreadCustomerNotificationCount();
+      setUnreadCount(count);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      channel = supabase
+        .channel(`home-notification-badge-${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'notifications',
+            filter: `recipient_type=eq.customer`,
+          },
+          async () => {
+            const updatedCount = await getUnreadCustomerNotificationCount();
+            setUnreadCount(updatedCount);
+          }
+        )
+        .subscribe();
+    }
+
+    initNotificationListener();
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Sync data refresh whenever the screen regains user focus
   useFocusEffect(
@@ -54,12 +96,19 @@ export default function HomeScreen() {
       async function syncHomeData() {
         try {
           setLoading(true);
-          const { data: { user } } = await supabase.auth.getUser();
-          
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+
           if (!user) {
             setLoading(false);
             return;
           }
+
+          // Fetch fresh unread count on focus return
+          getUnreadCustomerNotificationCount().then((cnt) => {
+            if (isMounted) setUnreadCount(cnt);
+          });
 
           // 1. Fetch customer profile
           const { data: profile } = await supabase
@@ -86,19 +135,18 @@ export default function HomeScreen() {
             if (isMounted) setCategoryMap(map);
           }
 
-          // 3. Fetch approved vendors joining vendor_profiles exactly like the store screen lookup
+          // 3. Fetch approved vendors
           const { data: vendorData } = await supabase
             .from('vendors')
             .select('*, vendor_profiles(avatar_url)')
             .eq('status', 'approved');
 
           if (isMounted && vendorData) {
-            // Safely map avatar_url regardless of one-to-one object or array join coercion format
             const parsedVendors = vendorData.map((v: any) => ({
               ...v,
               avatar_url: Array.isArray(v.vendor_profiles)
                 ? v.vendor_profiles[0]?.avatar_url
-                : v.vendor_profiles?.avatar_url || null
+                : v.vendor_profiles?.avatar_url || null,
             }));
             setVendors(parsedVendors);
           }
@@ -135,11 +183,10 @@ export default function HomeScreen() {
     }
   };
 
-  // Real-time search and structural cross-reference category filters
   const filteredVendors = useMemo(() => {
     return vendors.filter((vendor) => {
       const matchesSearch = vendor.shop_name?.toLowerCase().includes(searchQuery.toLowerCase());
-      
+
       if (!selectedCategory) {
         return matchesSearch;
       }
@@ -153,11 +200,8 @@ export default function HomeScreen() {
     });
   }, [vendors, searchQuery, selectedCategory, products, categoryMap]);
 
-  // Clean initials builder supporting strict alpha filters ("testvendor1" -> "TV")
   const getInitials = (name?: string) => {
     if (!name) return 'S';
-    
-    // Clean out trailing digits/numbers and clean split spaces or words
     const cleanName = name.replace(/[0-9]/g, '').trim();
     if (!cleanName) return 'S';
 
@@ -165,8 +209,6 @@ export default function HomeScreen() {
     if (parts.length >= 2) {
       return (parts[0][0] + parts[1][0]).toUpperCase();
     }
-    
-    // Single word fallback: slice out first two characters safely
     return cleanName.slice(0, 2).toUpperCase();
   };
 
@@ -204,7 +246,7 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         
-        {/* Top Profile Header */}
+        {/* Top Profile & Notification Header */}
         <View style={styles.topHeader}>
           <View>
             <View style={styles.brandBadge}>
@@ -215,17 +257,38 @@ export default function HomeScreen() {
             </Text>
             <Text style={styles.subGreetingText}>Let's find your favorite store</Text>
           </View>
-          <Pressable onPress={() => router.push('/profile')} style={styles.profileIconButton}>
-            <View style={styles.profileInnerRing}>
-              <Text style={styles.profileIconText}>
-                {getInitials(customerName || 'Customer')}
-              </Text>
-            </View>
-          </Pressable>
+
+          {/* Action Icons Wrapper */}
+          <View style={styles.headerActionsWrapper}>
+            {/* Notification Bell Button */}
+            <TouchableOpacity
+              onPress={() => router.push('/notifications')}
+              style={styles.bellIconButton}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.bellIconSymbol}>🔔</Text>
+              {unreadCount > 0 && (
+                <View style={styles.badgeContainer}>
+                  <Text style={styles.badgeText}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Profile Avatar Button */}
+            <Pressable onPress={() => router.push('/profile')} style={styles.profileIconButton}>
+              <View style={styles.profileInnerRing}>
+                <Text style={styles.profileIconText}>
+                  {getInitials(customerName || 'Customer')}
+                </Text>
+              </View>
+            </Pressable>
+          </View>
         </View>
 
         {/* Animated Search Engine Box */}
-        <Animated.View 
+        <Animated.View
           style={[
             styles.searchContainer,
             {
@@ -233,13 +296,13 @@ export default function HomeScreen() {
               elevation: searchShadow,
               shadowRadius: searchShadow.interpolate({
                 inputRange: [2, 6],
-                outputRange: [6, 16]
+                outputRange: [6, 16],
               }),
               shadowOpacity: searchShadow.interpolate({
                 inputRange: [2, 6],
-                outputRange: [0.05, 0.12]
-              })
-            }
+                outputRange: [0.05, 0.12],
+              }),
+            },
           ]}
         >
           <View style={styles.searchIconWrapper}>
@@ -266,9 +329,9 @@ export default function HomeScreen() {
             <Pressable
               onPress={() => setSelectedCategory(null)}
               style={({ pressed }) => [
-                styles.categoryChip, 
+                styles.categoryChip,
                 selectedCategory === null && styles.categoryChipSelected,
-                pressed && styles.chipPressed
+                pressed && styles.chipPressed,
               ]}
             >
               <Text style={[styles.categoryChipText, selectedCategory === null && styles.categoryChipTextSelected]}>
@@ -283,9 +346,9 @@ export default function HomeScreen() {
                   key={category.id}
                   onPress={() => handleCategoryPress(category.name)}
                   style={({ pressed }) => [
-                    styles.categoryChip, 
+                    styles.categoryChip,
                     isSelected && styles.categoryChipSelected,
-                    pressed && styles.chipPressed
+                    pressed && styles.chipPressed,
                   ]}
                 >
                   <Text style={[styles.categoryChipText, isSelected && styles.categoryChipTextSelected]}>
@@ -301,11 +364,9 @@ export default function HomeScreen() {
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Featured Stores</Text>
-            <Text style={styles.storeCountBadge}>
-              {filteredVendors.length} Available
-            </Text>
+            <Text style={styles.storeCountBadge}>{filteredVendors.length} Available</Text>
           </View>
-          
+
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#22CC71" />
@@ -398,6 +459,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  headerActionsWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  bellIconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F7F8FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#EAEFF3',
+    shadowColor: '#0D0D0D',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  bellIconSymbol: {
+    fontSize: 18,
+  },
+  badgeContainer: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#E53935',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
   brandBadge: {
     backgroundColor: '#A8E63A25',
     paddingHorizontal: 8,
@@ -425,9 +529,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   profileIconButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#F7F8FA',
     padding: 2,
     shadowColor: '#0D0D0D',
@@ -438,7 +542,7 @@ const styles = StyleSheet.create({
   },
   profileInnerRing: {
     flex: 1,
-    borderRadius: 22,
+    borderRadius: 20,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -446,7 +550,7 @@ const styles = StyleSheet.create({
     borderColor: '#22CC71',
   },
   profileIconText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: '#0D0D0D',
   },
