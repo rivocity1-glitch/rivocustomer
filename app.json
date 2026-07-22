@@ -39,7 +39,8 @@
       "expo-font",
       "expo-image",
       "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-firebase/app"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -48,8 +49,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "930733c1-2a88-480c-806c-3697d68bdf4f"
+        "projectId": "54a59530-c7d2-4a11-9051-2af6a7a6829b"
       }
-    }
+    },
+    "owner": "rivo.ved"
   }
 }

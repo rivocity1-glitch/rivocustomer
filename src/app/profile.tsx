@@ -1,70 +1,76 @@
+// src/app/profile.tsx
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { supabase } from '../lib/supabase'; // Adjust this import path to match your Supabase client location[cite: 10]
+import {
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { supabase } from '../lib/supabase';
 
 export default function ProfileScreen() {
-  const router = useRouter(); //[cite: 10]
-  const [loading, setLoading] = useState(true); //[cite: 10]
-  const [userData, setUserData] = useState<{ name: string; email: string; phone: string } | null>(null); //[cite: 10]
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState<{ name: string; email: string; phone: string } | null>(null);
 
   useEffect(() => {
     async function fetchProfile() {
       try {
-        setLoading(true); //[cite: 10]
+        setLoading(true);
 
-        // 1. Get currently logged in user
         const {
           data: { user },
-        } = await supabase.auth.getUser(); //[cite: 10]
+        } = await supabase.auth.getUser();
 
         if (!user) {
-          router.replace('/login'); //[cite: 10]
+          router.replace('/login');
           return;
         }
 
-        // 2. Fetch customer data from 'customers' table where auth_user_id matches
         const { data: customer, error } = await supabase
           .from('customers')
           .select('customer_name, email, phone')
           .eq('auth_user_id', user.id)
-          .single(); //[cite: 10]
+          .single();
 
         if (error) {
-          console.error('Error fetching customer data:', error.message); //[cite: 10]
+          console.error('Error fetching customer data:', error.message);
         } else if (customer) {
           setUserData({
-            name: customer.customer_name || 'N/A', //[cite: 10]
-            email: customer.email || 'N/A', //[cite: 10]
-            phone: customer.phone || 'N/A', //[cite: 10]
+            name: customer.customer_name || 'N/A',
+            email: customer.email || 'N/A',
+            phone: customer.phone || 'N/A',
           });
         }
       } catch (error) {
-        console.error('Unexpected error:', error); //[cite: 10]
+        console.error('Unexpected error:', error);
       } finally {
-        setLoading(false); //[cite: 10]
+        setLoading(false);
       }
     }
 
-    fetchProfile(); //[cite: 10]
+    fetchProfile();
   }, []);
 
-  // Handle user logout
   const handleLogout = async () => {
-    await supabase.auth.signOut(); //[cite: 10]
-    router.replace('/login'); //[cite: 10]
+    await supabase.auth.signOut();
+    router.replace('/login');
   };
 
   const getInitials = (name: string) => {
     return name
       .split(' ')
-      .map(part => part[0])
+      .map((part) => part[0])
       .join('')
       .toUpperCase()
       .slice(0, 2);
   };
 
-  // 5. Loading state view
   if (loading) {
     return (
       <View style={styles.centeredLoading}>
@@ -75,13 +81,13 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Premium Faux Gradient Header Block */}
+      {/* Premium Header Block */}
       <View style={styles.gradientHeader}>
         <View style={styles.headerAccentCircleLeft} />
         <View style={styles.headerAccentCircleRight} />
         <View style={styles.navRow}>
           <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backButtonText}>←</Text>
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </Pressable>
           <Text style={styles.headerTitle}>Account Profile</Text>
           <View style={{ width: 36 }} />
@@ -93,8 +99,12 @@ export default function ProfileScreen() {
               <Text style={styles.avatarText}>{getInitials(userData.name)}</Text>
             </View>
             <View style={styles.userMetaTextContainer}>
-              <Text style={styles.userMetaName} numberOfLines={1}>{userData.name}</Text>
-              <Text style={styles.userMetaSub} numberOfLines={1}>Rivo Premium Client</Text>
+              <Text style={styles.userMetaName} numberOfLines={1}>
+                {userData.name}
+              </Text>
+              <Text style={styles.userMetaSub} numberOfLines={1}>
+                Rivo Premium Client
+              </Text>
             </View>
           </View>
         )}
@@ -129,75 +139,95 @@ export default function ProfileScreen() {
             {/* QUICK ACTIONS SECTION */}
             <Text style={styles.sectionTitle}>Core Dashboard</Text>
             <View style={styles.premiumCard}>
-              {/* My Orders Menu Navigation */}
               <Pressable onPress={() => router.push('/orders')} style={styles.menuRowItem}>
                 <View style={styles.menuLeftBlock}>
-                  <Text style={styles.menuIconSymbol}>📋</Text>
+                  <Ionicons name="clipboard-outline" size={20} color="#0D0D0D" />
                   <Text style={styles.menuItemText}>My Orders</Text>
                 </View>
-                <Text style={styles.menuChevron}>➔</Text>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
               </Pressable>
 
               <View style={styles.cardSeparator} />
 
-              {/* My Addresses Menu Navigation */}
               <Pressable onPress={() => router.push('/addresses')} style={styles.menuRowItem}>
                 <View style={styles.menuLeftBlock}>
-                  <Text style={styles.menuIconSymbol}>🏠</Text>
+                  <Ionicons name="location-outline" size={20} color="#0D0D0D" />
                   <Text style={styles.menuItemText}>My Addresses</Text>
                 </View>
-                <Text style={styles.menuChevron}>➔</Text>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
               </Pressable>
             </View>
 
-            {/* UPCOMING ECOSYSTEM PLUGINS */}
-            <Text style={styles.sectionTitle}>Ecosystem Modules</Text>
+            {/* LEGAL & SUPPORT SECTION */}
+            <Text style={styles.sectionTitle}>Legal & Support</Text>
             <View style={styles.premiumCard}>
-              {/* Payments Menu Coming Soon */}
-              <View style={[styles.menuRowItem, styles.disabledMenuRow]}>
+              <Pressable onPress={() => router.push('/legal/terms' as any)} style={styles.menuRowItem}>
                 <View style={styles.menuLeftBlock}>
-                  <Text style={styles.menuIconSymbol}>💳</Text>
-                  <Text style={styles.menuItemText}>Saved Payments</Text>
+                  <Ionicons name="document-text-outline" size={20} color="#0D0D0D" />
+                  <Text style={styles.menuItemText}>Terms & Conditions</Text>
                 </View>
-                <View style={styles.comingSoonBadge}>
-                  <Text style={styles.comingSoonBadgeText}>SOON</Text>
-                </View>
-              </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </Pressable>
 
               <View style={styles.cardSeparator} />
 
-              {/* Wishlist Menu Coming Soon */}
-              <View style={[styles.menuRowItem, styles.disabledMenuRow]}>
+              <Pressable onPress={() => router.push('/legal/privacy' as any)} style={styles.menuRowItem}>
                 <View style={styles.menuLeftBlock}>
-                  <Text style={styles.menuIconSymbol}>❤️</Text>
-                  <Text style={styles.menuItemText}>My Wishlist</Text>
+                  <Ionicons name="shield-checkmark-outline" size={20} color="#0D0D0D" />
+                  <Text style={styles.menuItemText}>Privacy Policy</Text>
                 </View>
-                <View style={styles.comingSoonBadge}>
-                  <Text style={styles.comingSoonBadgeText}>SOON</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* SETTINGS & SUPPORT */}
-            <Text style={styles.sectionTitle}>Preferences & Help</Text>
-            <View style={styles.premiumCard}>
-              <View style={styles.menuRowItem}>
-                <View style={styles.menuLeftBlock}>
-                  <Text style={styles.menuIconSymbol}>⚙️</Text>
-                  <Text style={styles.menuItemText}>Settings Configuration</Text>
-                </View>
-                <Text style={styles.menuChevron}>➔</Text>
-              </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </Pressable>
 
               <View style={styles.cardSeparator} />
 
-              <View style={styles.menuRowItem}>
+              <Pressable onPress={() => router.push('/legal/liability' as any)} style={styles.menuRowItem}>
                 <View style={styles.menuLeftBlock}>
-                  <Text style={styles.menuIconSymbol}>🎧</Text>
-                  <Text style={styles.menuItemText}>Rivo Support Desk</Text>
+                  <Ionicons name="information-circle-outline" size={20} color="#0D0D0D" />
+                  <Text style={styles.menuItemText}>Limitation of Liability</Text>
                 </View>
-                <Text style={styles.menuChevron}>➔</Text>
-              </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </Pressable>
+
+              <View style={styles.cardSeparator} />
+
+              <Pressable onPress={() => router.push('/legal/disclaimer' as any)} style={styles.menuRowItem}>
+                <View style={styles.menuLeftBlock}>
+                  <Ionicons name="help-circle-outline" size={20} color="#0D0D0D" />
+                  <Text style={styles.menuItemText}>Disclaimer</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </Pressable>
+
+              <View style={styles.cardSeparator} />
+
+              <Pressable onPress={() => router.push('/legal/refund-policy' as any)} style={styles.menuRowItem}>
+                <View style={styles.menuLeftBlock}>
+                  <Ionicons name="document-text-outline" size={20} color="#0D0D0D" />
+                  <Text style={styles.menuItemText}>Refund & Cancellation Policy</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </Pressable>
+
+              <View style={styles.cardSeparator} />
+
+              <Pressable onPress={() => router.push('/legal/contact' as any)} style={styles.menuRowItem}>
+                <View style={styles.menuLeftBlock}>
+                  <Ionicons name="mail-outline" size={20} color="#0D0D0D" />
+                  <Text style={styles.menuItemText}>Contact Us</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </Pressable>
+
+              <View style={styles.cardSeparator} />
+
+              <Pressable onPress={() => router.push('/about' as any)} style={styles.menuRowItem}>
+                <View style={styles.menuLeftBlock}>
+                  <Ionicons name="information-circle-outline" size={20} color="#0D0D0D" />
+                  <Text style={styles.menuItemText}>About Rivo</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </Pressable>
             </View>
           </View>
         ) : (
@@ -207,13 +237,13 @@ export default function ProfileScreen() {
         )}
       </ScrollView>
 
-      {/* 6. Logout Button Footer Pane */}
+      {/* Logout Footer Pane */}
       <View style={styles.footerPanel}>
         <Pressable
-          onClick={handleLogout} //[cite: 10]
-          onPress={handleLogout} //[cite: 10]
+          onPress={handleLogout}
           style={({ pressed }) => [styles.logoutButton, pressed && styles.microInteractionState]}
         >
+          <Ionicons name="log-out-outline" size={18} color="#EF4444" style={{ marginRight: 8 }} />
           <Text style={styles.logoutButtonText}>Secure Logout</Text>
         </Pressable>
       </View>
@@ -275,11 +305,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF15',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  backButtonText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
   headerTitle: {
     fontSize: 18,
@@ -385,39 +410,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
   },
-  disabledMenuRow: {
-    opacity: 0.55,
-  },
   menuLeftBlock: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  menuIconSymbol: {
-    fontSize: 16,
-  },
   menuItemText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#0D0D0D',
-  },
-  menuChevron: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: '700',
-  },
-  comingSoonBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  comingSoonBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#64748B',
   },
   footerPanel: {
     position: 'absolute',
@@ -432,6 +433,7 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   logoutButton: {
+    flexDirection: 'row',
     backgroundColor: '#EF444412',
     borderWidth: 1,
     borderColor: '#EF444430',

@@ -1,6 +1,8 @@
+// src/app/orders/index.tsx
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -9,6 +11,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { addToCart, clearCart, increaseQuantity } from "../../lib/cart";
 import { supabase } from '../../lib/supabase';
 
 interface Order {
@@ -18,6 +21,28 @@ interface Order {
   payment_status: string;
   order_status: string;
   created_at: string;
+}
+
+interface OrderItemFetch {
+  id: string;
+  quantity: number;
+  unit_price: number;
+  product_id: string;
+  products?: {
+    id: string;
+    name: string;
+    price: number;
+    vendor_id: string;
+    status?: string;
+  } | null;
+  product?: {
+    id: string;
+    name: string;
+    price: number;
+    vendor_id: string;
+    status?: string;
+  } | null;
+  [key: string]: any;
 }
 
 export default function OrdersScreen() {
@@ -96,6 +121,165 @@ export default function OrdersScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchOrders();
+  };
+
+  const processRepeatOrder = async (orderId: string) => {
+    console.log("=== [DIAGNOSTIC] processRepeatOrder Initiated ===");
+    console.log("[DIAGNOSTIC] Selected orderId:", orderId);
+
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      console.log("[DIAGNOSTIC] Authenticated User ID:", user?.id || "NONE");
+
+      if (authError || !user) {
+        console.error("[DIAGNOSTIC] Auth error encountered:", authError);
+        Alert.alert("Error", "User not authenticated.");
+        return;
+      }
+
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      console.log("[DIAGNOSTIC] Resolved Customer ID:", customer?.id || "NONE");
+
+      if (customerError || !customer) {
+        console.error("[DIAGNOSTIC] Customer fetch error encountered:", customerError);
+        Alert.alert("Error", "Customer profile not found.");
+        return;
+      }
+
+      // 1. Query order items with deep diagnostic inspection
+      console.log("[DIAGNOSTIC] Executing order_items query for order_id:", orderId);
+      const response = await supabase
+        .from('order_items')
+        .select(`
+          id,
+          quantity,
+          unit_price,
+          product_id,
+          products (
+            id,
+            name,
+            price,
+            vendor_id,
+            status
+          )
+        `)
+        .eq('order_id', orderId);
+
+      const { data: orderItems, error: itemsError } = response;
+
+      console.log("[DIAGNOSTIC] Complete Raw Supabase Response:", JSON.stringify(response, null, 2));
+
+      if (itemsError) {
+        console.error("[DIAGNOSTIC] Query Failed - Error Details:", {
+          code: itemsError.code,
+          message: itemsError.message,
+          details: itemsError.details,
+          hint: itemsError.hint,
+        });
+      }
+
+      console.log("[DIAGNOSTIC] Rows returned count:", orderItems ? orderItems.length : 0);
+
+      if (!orderItems || orderItems.length === 0) {
+        console.warn(`[DIAGNOSTIC] No order_items rows exist in database matching order_id: "${orderId}"`);
+        Alert.alert("Error", "Unable to retrieve items for this order.");
+        return;
+      }
+
+      const rawItems = orderItems as unknown as OrderItemFetch[];
+      const firstRow = rawItems[0];
+
+      console.log("[DIAGNOSTIC] Raw structure of first returned row:", JSON.stringify(firstRow, null, 2));
+      console.log("[DIAGNOSTIC] Detected keys on first row:", Object.keys(firstRow));
+      console.log("[DIAGNOSTIC] 'products' property value:", firstRow.products);
+      console.log("[DIAGNOSTIC] 'product' property value:", firstRow.product);
+
+      // Check for null products/relations across all items
+      rawItems.forEach((item, index) => {
+        const prod = item.products || item.product;
+        if (!prod) {
+          console.warn(`[DIAGNOSTIC] Item at index ${index} has NULL product reference:`, {
+            rawItem: item,
+            availableKeys: Object.keys(item),
+          });
+        }
+      });
+
+      // 2. Filter & Validate available products using schema 'status' column
+      const validItems = rawItems.filter((item) => {
+        const prod = item.products || item.product;
+        if (!prod) return false; // Deleted product
+
+        // Skip inactive or unavailable products based on status
+        if (prod.status && prod.status.toLowerCase() !== 'active') return false;
+
+        return true;
+      });
+
+      console.log("[DIAGNOSTIC] Valid items count after availability checks:", validItems.length);
+
+      if (validItems.length === 0) {
+        Alert.alert("Notice", "Some products from this order are no longer available.");
+        return;
+      }
+
+      const isPartial = validItems.length < rawItems.length;
+
+      await rebuildCartAndNavigate(customer.id, validItems, isPartial);
+    } catch (err) {
+      console.error('[DIAGNOSTIC] Uncaught Repeat order error:', err);
+      Alert.alert("Error", "Could not process repeat order at this time.");
+    }
+  };
+
+  const rebuildCartAndNavigate = async (
+    customerId: string,
+    validItems: OrderItemFetch[],
+    isPartial: boolean
+  ) => {
+    try {
+      clearCart();
+
+      validItems.forEach((item) => {
+        const prod = item.products || item.product;
+        if (!prod) return;
+
+        addToCart({
+          id: prod.id,
+          vendor_id: prod.vendor_id,
+          name: prod.name,
+          price: prod.price,
+        });
+
+        if (item.quantity > 1) {
+          for (let i = 1; i < item.quantity; i++) {
+            increaseQuantity(prod.id);
+          }
+        }
+      });
+
+      if (isPartial) {
+        Alert.alert(
+          "Notice",
+          "Some items are no longer available and were removed from your cart.",
+          [{ text: "OK", onPress: () => router.push('/cart') }]
+        );
+      } else {
+        router.push('/cart');
+      }
+    } catch (err) {
+      console.error("Rebuild cart error:", err);
+      Alert.alert("Error", "Failed to update cart.");
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -187,13 +371,11 @@ export default function OrdersScreen() {
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                onPress={() =>
-                  router.push({ pathname: '/orders/[id]', params: { id: order.id } })
-                }
+                onPress={() => processRepeatOrder(order.id)}
                 style={styles.repeatOrderButton}
                 activeOpacity={0.8}
               >
-                <Text style={styles.repeatOrderButtonText}>View & Repeat</Text>
+                <Text style={styles.repeatOrderButtonText}>Repeat Order</Text>
               </TouchableOpacity>
             )}
 

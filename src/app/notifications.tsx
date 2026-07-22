@@ -2,16 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Animated,
-    Modal,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Animated,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 
@@ -188,7 +188,6 @@ export default function CustomerNotificationsScreen() {
     if (!authUserId) return;
 
     const channelName = `realtime-customer-notifications-${authUserId}`;
-    supabase.removeChannel(supabase.channel(channelName));
 
     const channel = supabase
       .channel(channelName)
@@ -227,6 +226,7 @@ export default function CustomerNotificationsScreen() {
       .subscribe();
 
     return () => {
+      channel.unsubscribe();
       supabase.removeChannel(channel);
     };
   }, [authUserId]);

@@ -22,6 +22,7 @@ import { calculateBilling, DeliveryConfig } from '../utils/billing';
 import { calculateDistance } from "../utils/distance";
 
 interface SavedAddress {
+  id?: string;
   address_line1: string;
   address_line2: string;
   landmark: string;
@@ -31,6 +32,75 @@ interface SavedAddress {
   latitude?: number | null;
   longitude?: number | null;
 }
+
+type OnlineAppType = 'gpay' | 'phonepe' | 'paytm' | 'bhim' | 'amazonpay' | 'other';
+
+interface PaymentAppOption {
+  id: OnlineAppType;
+  name: string;
+  subtitle: string;
+  initial: string;
+  color: string;
+  bgColor: string;
+  scheme: string;
+}
+
+const PAYMENT_APPS: PaymentAppOption[] = [
+  {
+    id: 'gpay',
+    name: 'Google Pay',
+    subtitle: 'Pay securely using Google Pay',
+    initial: 'G',
+    color: '#2563EB',
+    bgColor: '#EAEFFF',
+    scheme: 'gpay://upi/pay',
+  },
+  {
+    id: 'phonepe',
+    name: 'PhonePe',
+    subtitle: 'Pay securely using PhonePe',
+    initial: 'P',
+    color: '#7C3AED',
+    bgColor: '#F5EFFF',
+    scheme: 'phonepe://pay',
+  },
+  {
+    id: 'paytm',
+    name: 'Paytm',
+    subtitle: 'Pay securely using Paytm',
+    initial: 'P',
+    color: '#0284C7',
+    bgColor: '#E0F2FE',
+    scheme: 'paytmmp://pay',
+  },
+  {
+    id: 'bhim',
+    name: 'BHIM',
+    subtitle: 'Pay securely using BHIM UPI',
+    initial: 'B',
+    color: '#EA580C',
+    bgColor: '#FFEDD5',
+    scheme: 'bhim://pay',
+  },
+  {
+    id: 'amazonpay',
+    name: 'Amazon Pay',
+    subtitle: 'Pay securely using Amazon Pay',
+    initial: 'A',
+    color: '#D97706',
+    bgColor: '#FEF3C7',
+    scheme: 'amazonpay://pay',
+  },
+  {
+    id: 'other',
+    name: 'Other UPI Apps',
+    subtitle: 'Choose from installed UPI applications',
+    initial: 'U',
+    color: '#10B981',
+    bgColor: '#ECFDF5',
+    scheme: 'upi://pay',
+  },
+];
 
 export default function CheckoutScreen() {
   const [customerName, setCustomerName] = useState('');
@@ -72,7 +142,7 @@ export default function CheckoutScreen() {
 
   // Modern payment specific states
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
-  const [selectedOnlineApp, setSelectedOnlineApp] = useState<'gpay' | 'phonepe' | null>(null);
+  const [selectedOnlineApp, setSelectedOnlineApp] = useState<OnlineAppType | null>(null);
   
   // Specific states gathered directly from active contextual vendor relational parameters
   const [vendorUpiId, setVendorUpiId] = useState<string>('');
@@ -80,6 +150,12 @@ export default function CheckoutScreen() {
   
   // Track deep link handoff state
   const [paymentSubmitted, setPaymentSubmitted] = useState(false);
+
+  // App Not Installed Modal State
+  const [missingAppModal, setMissingAppModal] = useState<{ visible: boolean; appName: string }>({
+    visible: false,
+    appName: '',
+  });
 
   // Pre-generate order number so it can be safely referenced in the transaction note (tn) prior to submission
   const preGeneratedOrderNumber = useMemo(() => {
@@ -231,13 +307,14 @@ export default function CheckoutScreen() {
 
         const { data: addressData, error: addressError } = await supabase
           .from('customer_addresses')
-          .select('address_line1, address_line2, landmark, city, state, pin_code, latitude, longitude')
+          .select('id, address_line1, address_line2, landmark, city, state, pin_code, latitude, longitude')
           .eq('customer_id', customer.id)
           .eq('is_default', true)
           .maybeSingle();
 
         if (!addressError && addressData) {
           setAddress({
+            id: addressData.id,
             address_line1: addressData.address_line1 || '',
             address_line2: addressData.address_line2 || '',
             landmark: addressData.landmark || '',
@@ -354,38 +431,76 @@ export default function CheckoutScreen() {
           .update({ is_default: false })
           .eq('customer_id', customerId);
 
-        await supabase.from('customer_addresses').insert({
-          customer_id: customerId,
-          is_default: true,
-          ...formAddress,
-        });
+        const { data: newAddress, error } = await supabase
+          .from("customer_addresses")
+          .insert({
+            customer_id: customerId,
+            is_default: true,
+            ...formAddress,
+          })
+          .select()
+          .single();
+
+        if (!error && newAddress) {
+          setAddress(newAddress);
+        } else {
+          setAddress({ ...formAddress });
+        }
       } catch (err) {
         console.error('Error recording default address mapping node:', err);
+        setAddress({ ...formAddress });
       }
+    } else {
+      setAddress({ ...formAddress });
     }
 
-    setAddress({ ...formAddress });
     setShowAddressForm(false);
   };
 
-  async function handleUpiPayment(app: "gpay" | "phonepe") {
-    const targetUpiId = vendorUpiId || 'merchant@upi';
+  const handleAppSelection = async (appId: OnlineAppType) => {
+    setSelectedOnlineApp(appId);
+
+    const appConfig = PAYMENT_APPS.find((app) => app.id === appId);
+    if (!appConfig) return;
+
+    const targetUpiId = vendorUpiId || 'atharvavedpanditrao-1@okicici';
     const targetShopName = vendorShopName || 'Merchant Partner';
     const amountValue = checkoutCharges.grandTotal.toString();
 
-    const upiUri = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(targetShopName)}&am=${encodeURIComponent(amountValue)}&cu=${encodeURIComponent('INR')}&tn=${encodeURIComponent(preGeneratedOrderNumber)}`;
+    const queryParams = `pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(targetShopName)}&am=${encodeURIComponent(amountValue)}&cu=${encodeURIComponent('INR')}&tn=${encodeURIComponent(preGeneratedOrderNumber)}`;
     
-    console.log("UPI URI:", upiUri);
+    let targetUri = '';
+    if (appId === 'other') {
+      targetUri = `upi://pay?${queryParams}`;
+    } else {
+      targetUri = `${appConfig.scheme}?${queryParams}`;
+    }
+
+    console.log("Launching UPI Scheme:", targetUri);
 
     try {
-      await Linking.openURL(upiUri);
-      setSelectedOnlineApp(app);
-      setPaymentSubmitted(true);
+      if (appId === 'other') {
+        const canOpen = await Linking.canOpenURL(targetUri);
+        if (canOpen) {
+          await Linking.openURL(targetUri);
+          setPaymentSubmitted(true);
+        } else {
+          setMissingAppModal({ visible: true, appName: 'No UPI Apps found' });
+        }
+      } else {
+        const canOpen = await Linking.canOpenURL(targetUri);
+        if (canOpen) {
+          await Linking.openURL(targetUri);
+          setPaymentSubmitted(true);
+        } else {
+          setMissingAppModal({ visible: true, appName: appConfig.name });
+        }
+      }
     } catch (error) {
-      console.error(error);
-      Alert.alert("Payment Error", "No compatible UPI application was found.");
+      console.error('App launch error:', error);
+      setMissingAppModal({ visible: true, appName: appConfig.name });
     }
-  }
+  };
 
   // Action function to copy the OTP value to device clipboard node structures securely
   function handleCopyOtp() {
@@ -398,6 +513,11 @@ export default function CheckoutScreen() {
 
   async function placeOrder() {
     if (isPlacingOrder) return;
+
+    if (paymentMethod === 'online' && !selectedOnlineApp) {
+      Alert.alert("Please select a payment app.");
+      return;
+    }
 
     try {
       setIsPlacingOrder(true);
@@ -429,35 +549,65 @@ export default function CheckoutScreen() {
         return;
       }
 
+      let activeAddress: SavedAddress | null = address;
+
+      if (!activeAddress?.id) {
+        const { data: freshAddress, error: freshAddressErr } = await supabase
+          .from("customer_addresses")
+          .select("id,address_line1,address_line2,landmark,city,state,pin_code,latitude,longitude")
+          .eq("customer_id", testCustomer.id)
+          .eq("is_default", true)
+          .maybeSingle();
+
+        if (!freshAddressErr && freshAddress) {
+          activeAddress = freshAddress;
+          setAddress(freshAddress);
+        }
+      }
+
+      if (!activeAddress?.id) {
+        Alert.alert('Error', 'Unable to determine your delivery address. Please edit and save your address again.');
+        return;
+      }
+
       const vendorId = cart[0].vendor_id;
       
       // Generate a random 6-digit numeric OTP and save to orders.delivery_code
       const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
+      console.log("Address State:", address);
+      console.log("Database Address:", activeAddress);
+      console.log("Address ID:", activeAddress.id);
+
+      const orderPayload = {
+        order_number: preGeneratedOrderNumber,
+        customer_id: testCustomer.id,
+        customer_auth_id: userData.user.id,
+        customer_address_id: activeAddress.id,
+        vendor_id: vendorId,
+        subtotal: checkoutCharges.itemsTotal,
+        delivery_fee: checkoutCharges.deliveryFee,
+        platform_fee: checkoutCharges.platformFee,
+        total_amount: checkoutCharges.grandTotal,
+        payment_status: 'pending',
+        order_status: 'pending',
+        actual_distance_km: distance || 0,
+        chargeable_distance_km: checkoutCharges.chargeableDistanceKm,
+        rider_earning: checkoutCharges.riderEarning,
+        rivo_delivery_margin: checkoutCharges.rivoDeliveryMargin,
+        vendor_commission: checkoutCharges.vendorCommission,
+        vendor_earning: checkoutCharges.vendorEarning,
+        settled_vendor: false,
+        settled_rider: false,
+        payment_method: paymentMethod,
+        delivery_code: randomOtp,
+      };
+
+      console.log("ORDER PAYLOAD", orderPayload);
+
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
-        .insert({
-          order_number: preGeneratedOrderNumber,
-          customer_id: testCustomer.id,
-          customer_auth_id: userData.user.id,
-          vendor_id: vendorId,
-          subtotal: checkoutCharges.itemsTotal,
-          delivery_fee: checkoutCharges.deliveryFee,
-          platform_fee: checkoutCharges.platformFee,
-          total_amount: checkoutCharges.grandTotal,
-          payment_status: 'pending',
-          order_status: 'pending',
-          actual_distance_km: distance || 0,
-          chargeable_distance_km: checkoutCharges.chargeableDistanceKm,
-          rider_earning: checkoutCharges.riderEarning,
-          rivo_delivery_margin: checkoutCharges.rivoDeliveryMargin,
-          vendor_commission: checkoutCharges.vendorCommission,
-          vendor_earning: checkoutCharges.vendorEarning,
-          settled_vendor: false,
-          settled_rider: false,
-          payment_method: paymentMethod,
-          delivery_code: randomOtp,
-        })
+        .insert(orderPayload)
         .select()
         .single();
 
@@ -466,6 +616,21 @@ export default function CheckoutScreen() {
           "Order creation failed",
           `Code: ${orderError.code || 'N/A'}\nMessage: ${orderError.message || 'N/A'}`
         );
+        return;
+      }
+
+      console.log("Inserted Order:", orderData);
+
+      const { data: verifyOrder } = await supabase
+        .from("orders")
+        .select("id, customer_address_id")
+        .eq("id", orderData.id)
+        .single();
+
+      console.log("Verification:", verifyOrder);
+
+      if (verifyOrder?.customer_address_id == null) {
+        Alert.alert("Error", "Order created without delivery address. Checkout aborted.");
         return;
       }
 
@@ -772,45 +937,60 @@ export default function CheckoutScreen() {
 
           {paymentMethod === 'online' && (
             <View style={styles.modernAppsContainer}>
-              {/* Google Pay Card */}
-              <Pressable
-                onPress={() => handleUpiPayment("gpay")}
-                style={({ pressed }) => [
-                  styles.modernAppCard,
-                  selectedOnlineApp === 'gpay' && styles.modernAppCardSelected,
-                  pressed && styles.microInteractionState
-                ]}
-              >
-                <View style={[styles.appIconCircle, { backgroundColor: '#EAEFFF' }]}>
-                  <Text style={[styles.appIconInitial, { color: '#2563EB' }]}>G</Text>
-                </View>
-                <View style={styles.appTextDetails}>
-                  <Text style={styles.appNameTitle}>Google Pay</Text>
-                  <Text style={styles.appSubtitleText}>Pay securely using Google Pay</Text>
-                </View>
-              </Pressable>
-
-              {/* PhonePe Card */}
-              <Pressable
-                onPress={() => handleUpiPayment("phonepe")}
-                style={({ pressed }) => [
-                  styles.modernAppCard,
-                  selectedOnlineApp === 'phonepe' && styles.modernAppCardSelected,
-                  pressed && styles.microInteractionState
-                ]}
-              >
-                <View style={[styles.appIconCircle, { backgroundColor: '#F5EFFF' }]}>
-                  <Text style={[styles.appIconInitial, { color: '#7C3AED' }]}>P</Text>
-                </View>
-                <View style={styles.appTextDetails}>
-                  <Text style={styles.appNameTitle}>PhonePe</Text>
-                  <Text style={styles.appSubtitleText}>Pay securely using PhonePe</Text>
-                </View>
-              </Pressable>
+              {PAYMENT_APPS.map((app) => {
+                const isSelected = selectedOnlineApp === app.id;
+                return (
+                  <Pressable
+                    key={app.id}
+                    onPress={() => handleAppSelection(app.id)}
+                    style={({ pressed }) => [
+                      styles.modernAppCard,
+                      isSelected && styles.modernAppCardSelected,
+                      pressed && styles.microInteractionState
+                    ]}
+                  >
+                    <View style={[styles.appIconCircle, { backgroundColor: app.bgColor }]}>
+                      <Text style={[styles.appIconInitial, { color: app.color }]}>{app.initial}</Text>
+                    </View>
+                    <View style={styles.appTextDetails}>
+                      <Text style={styles.appNameTitle}>{app.name}</Text>
+                      <Text style={styles.appSubtitleText}>{app.subtitle}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
             </View>
           )}
         </View>
       </ScrollView>
+
+      {/* App Not Installed Dialog */}
+      <Modal
+        visible={missingAppModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMissingAppModal({ visible: false, appName: '' })}
+      >
+        <View style={styles.missingAppOverlay}>
+          <View style={styles.missingAppCard}>
+            <Text style={styles.missingAppTitle}>{missingAppModal.appName} is not installed on this device.</Text>
+            <View style={styles.missingAppButtonRow}>
+              <Pressable
+                style={styles.missingAppCancelBtn}
+                onPress={() => setMissingAppModal({ visible: false, appName: '' })}
+              >
+                <Text style={styles.missingAppCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.missingAppChooseBtn}
+                onPress={() => setMissingAppModal({ visible: false, appName: '' })}
+              >
+                <Text style={styles.missingAppChooseText}>Choose Another App</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Sticky Footer Panel */}
       <View style={styles.stickyFooterPanel}>
@@ -822,7 +1002,7 @@ export default function CheckoutScreen() {
           onPress={placeOrder}
           disabled={!address || isPlacingOrder || !customerId}
           style={({ pressed }) => {
-            const styleArray = [styles.stickyOrderPlacementButton];
+            const styleArray: any[] = [styles.stickyOrderPlacementButton];
             if (!address || isPlacingOrder || !customerId) styleArray.push(styles.disabledButton);
             if (pressed && address && !isPlacingOrder && customerId) styleArray.push(styles.microInteractionState);
             return styleArray;
@@ -1576,5 +1756,62 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontWeight: '500',
     lineHeight: 15,
+  },
+  missingAppOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  missingAppCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  missingAppTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 22,
+  },
+  missingAppButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  missingAppCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+  },
+  missingAppCancelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  missingAppChooseBtn: {
+    flex: 1.4,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+  },
+  missingAppChooseText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

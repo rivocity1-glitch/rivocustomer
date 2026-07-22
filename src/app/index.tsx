@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -253,7 +254,7 @@ export default function HomeScreen() {
               <Text style={styles.brandBadgeText}>RIVO INSTANT</Text>
             </View>
             <Text style={styles.greetingText}>
-              Hello, {customerName || 'Customer'} 👋
+              Hello, {customerName || 'Customer'}
             </Text>
             <Text style={styles.subGreetingText}>Let's find your favorite store</Text>
           </View>
@@ -266,7 +267,7 @@ export default function HomeScreen() {
               style={styles.bellIconButton}
               activeOpacity={0.7}
             >
-              <Text style={styles.bellIconSymbol}>🔔</Text>
+              <Ionicons name="notifications-outline" size={22} color="#0D0D0D" />
               {unreadCount > 0 && (
                 <View style={styles.badgeContainer}>
                   <Text style={styles.badgeText}>
@@ -306,7 +307,7 @@ export default function HomeScreen() {
           ]}
         >
           <View style={styles.searchIconWrapper}>
-            <Text style={styles.searchIconSymbol}>🔍</Text>
+            <Ionicons name="search" size={20} color="#94A3B8" />
           </View>
           <TextInput
             placeholder="Search stores, markets or shops..."
@@ -334,8 +335,13 @@ export default function HomeScreen() {
                 pressed && styles.chipPressed,
               ]}
             >
+              <Ionicons
+                name="grid-outline"
+                size={16}
+                color={selectedCategory === null ? '#FFFFFF' : '#475569'}
+              />
               <Text style={[styles.categoryChipText, selectedCategory === null && styles.categoryChipTextSelected]}>
-                ✨ All Stores
+                All Stores
               </Text>
             </Pressable>
 
@@ -351,8 +357,13 @@ export default function HomeScreen() {
                     pressed && styles.chipPressed,
                   ]}
                 >
+                  <Ionicons
+                    name="cube-outline"
+                    size={16}
+                    color={isSelected ? '#FFFFFF' : '#475569'}
+                  />
                   <Text style={[styles.categoryChipText, isSelected && styles.categoryChipTextSelected]}>
-                    📦 {category.name}
+                    {category.name}
                   </Text>
                 </Pressable>
               );
@@ -374,7 +385,9 @@ export default function HomeScreen() {
             </View>
           ) : filteredVendors.length === 0 ? (
             <View style={styles.emptyStateContainer}>
-              <Text style={styles.emptyIcon}>🏪</Text>
+              <View style={styles.emptyIconContainer}>
+                <Ionicons name="storefront-outline" size={32} color="#94A3B8" />
+              </View>
               <Text style={styles.emptyStateTitle}>
                 {searchQuery ? 'No matching stores' : 'No stores found'}
               </Text>
@@ -416,25 +429,25 @@ export default function HomeScreen() {
       <View style={styles.bottomTabBar}>
         <Pressable onPress={() => router.push('/')} style={styles.tabItem}>
           <View style={[styles.tabIconIndicator, styles.tabIconIndicatorActive]}>
-            <Text style={styles.tabIcon}>🏠</Text>
+            <Ionicons name="home-outline" size={22} color="#22CC71" />
           </View>
           <Text style={[styles.tabText, styles.tabActiveText]}>Home</Text>
         </Pressable>
         <Pressable onPress={() => router.push('/orders' as any)} style={styles.tabItem}>
           <View style={styles.tabIconIndicator}>
-            <Text style={styles.tabIcon}>📋</Text>
+            <Ionicons name="receipt-outline" size={22} color="#94A3B8" />
           </View>
           <Text style={styles.tabText}>Orders</Text>
         </Pressable>
         <Pressable onPress={() => router.push('/cart' as any)} style={styles.tabItem}>
           <View style={styles.tabIconIndicator}>
-            <Text style={styles.tabIcon}>🛒</Text>
+            <Ionicons name="cart-outline" size={22} color="#94A3B8" />
           </View>
           <Text style={styles.tabText}>Cart</Text>
         </Pressable>
         <Pressable onPress={() => router.push('/profile')} style={styles.tabItem}>
           <View style={styles.tabIconIndicator}>
-            <Text style={styles.tabIcon}>👤</Text>
+            <Ionicons name="person-outline" size={22} color="#94A3B8" />
           </View>
           <Text style={styles.tabText}>Profile</Text>
         </Pressable>
@@ -479,9 +492,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 6,
     elevation: 2,
-  },
-  bellIconSymbol: {
-    fontSize: 18,
   },
   badgeContainer: {
     position: 'absolute',
@@ -570,9 +580,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  searchIconSymbol: {
-    fontSize: 16,
-  },
   searchInput: {
     flex: 1,
     paddingHorizontal: 12,
@@ -616,6 +623,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   categoryChip: {
+    flexDirection: 'row',
+    gap: 6,
     backgroundColor: '#F7F8FA',
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -746,9 +755,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  emptyIcon: {
-    fontSize: 36,
-    marginBottom: 10,
+  emptyIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#EAEFF3',
   },
   emptyStateContainer: {
     backgroundColor: '#F7F8FA',
@@ -810,9 +826,6 @@ const styles = StyleSheet.create({
   },
   tabIconIndicatorActive: {
     transform: [{ scale: 1.1 }],
-  },
-  tabIcon: {
-    fontSize: 16,
   },
   tabText: {
     fontSize: 11,

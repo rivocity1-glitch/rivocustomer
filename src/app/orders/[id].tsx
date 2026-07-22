@@ -7,6 +7,7 @@ import {
   Animated,
   Dimensions,
   Linking,
+  Modal,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -17,6 +18,7 @@ import {
   View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { notificationService } from '../../services/notificationService';
 
 interface OrderItem {
   id: string;
@@ -31,8 +33,10 @@ interface OrderItem {
 interface OrderDetails {
   id: string;
   order_number: string;
+  customer_id: string;
   subtotal: number;
   delivery_fee: number;
+  platform_fee: number;
   total_amount: number;
   payment_status: string;
   order_status: string;
@@ -40,6 +44,9 @@ interface OrderDetails {
   delivery_code: string | null;
   vendor_id: string;
   rider_id: string | null;
+  cancelled_by: string | null;
+  cancel_reason: string | null;
+  cancelled_at: string | null;
   vendors: {
     shop_name: string;
     phone?: string;
@@ -69,6 +76,15 @@ interface TrackingMilestone {
   created_at: string;
 }
 
+const CANCELLATION_REASONS = [
+  "Ordered by mistake",
+  "Found a better price",
+  "Delivery taking too long",
+  "Changed my mind",
+  "Wrong delivery address",
+  "Other"
+] as const;
+
 const { width } = Dimensions.get('window');
 
 export default function OrderTrackingScreen() {
@@ -78,6 +94,10 @@ export default function OrderTrackingScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+
+  // Cancellation State
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [selectedCancelReason, setSelectedCancelReason] = useState<string>('');
 
   // Animations System
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -116,8 +136,10 @@ export default function OrderTrackingScreen() {
         .select(`
           id,
           order_number,
+          customer_id,
           subtotal,
           delivery_fee,
+          platform_fee,
           total_amount,
           payment_status,
           order_status,
@@ -125,6 +147,9 @@ export default function OrderTrackingScreen() {
           delivery_code,
           vendor_id,
           rider_id,
+          cancelled_by,
+          cancel_reason,
+          cancelled_at,
           vendors ( shop_name, phone ),
           customer_addresses ( address_line1, address_line2, landmark, city, state, pin_code ),
           order_items (
@@ -134,7 +159,13 @@ export default function OrderTrackingScreen() {
             total_price,
             product:products ( name )
           ),
-          riders ( rider_name, phone, rating, vehicle_type, vehicle_number )
+          assigned_rider:riders!orders_rider_fk (
+            rider_name,
+            phone,
+            rating,
+            vehicle_type,
+            vehicle_number
+          )
         `)
         .eq('id', id)
         .maybeSingle();
@@ -219,7 +250,17 @@ export default function OrderTrackingScreen() {
     }
   };
 
-  const handleCancelOrder = () => {
+  const handleOpenCancelModal = () => {
+    setSelectedCancelReason('');
+    setShowCancelModal(true);
+  };
+
+  const handleConfirmCancel = () => {
+    if (!selectedCancelReason) {
+      Alert.alert("Selection Required", "Please select a reason for cancelling your order.");
+      return;
+    }
+
     Alert.alert(
       "Cancel this order?",
       "This action cannot be undone.",
@@ -235,13 +276,21 @@ export default function OrderTrackingScreen() {
   };
 
   const executeCancellation = async () => {
-    if (!id || isCancelling) return;
+    if (!id || !order || isCancelling) return;
     try {
       setIsCancelling(true);
+      setShowCancelModal(false);
       
+      const timestamp = new Date().toISOString();
+
       const { error: updateError } = await supabase
         .from('orders')
-        .update({ order_status: 'cancelled' })
+        .update({
+          order_status: 'cancelled',
+          cancelled_by: 'customer',
+          cancel_reason: selectedCancelReason,
+          cancelled_at: timestamp
+        })
         .eq('id', id);
 
       if (updateError) throw updateError;
@@ -252,6 +301,18 @@ export default function OrderTrackingScreen() {
           order_id: id,
           status: 'cancelled'
         });
+
+      // Send Order Cancellation Notification
+      try {
+        await notificationService.notifyCustomerOrderCancelled(
+          order.customer_id,
+          order.order_number,
+          id,
+          selectedCancelReason
+        );
+      } catch (notifErr) {
+        console.error('Failed to send cancellation notification:', notifErr);
+      }
 
       Alert.alert("Success", "Order cancelled successfully.");
       fetchOrderAndTrackingDetails();
@@ -295,13 +356,14 @@ export default function OrderTrackingScreen() {
     const dayAndYear = date.toLocaleDateString('en-GB', {
       day: '2-digit',
       month: 'short',
+      year: 'numeric',
     });
     const time = date.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
     });
-    return `${dayAndYear}, ${time}`;
+    return `${dayAndYear}\n${time}`;
   };
 
   const computedTimeline = useMemo(() => {
@@ -373,9 +435,8 @@ export default function OrderTrackingScreen() {
   const isDelivered = currentStatusStr === 'delivered';
   
   const showOtpLayout = !isDelivered && !isCancelled;
-  const isCancellationAllowed = ['pending', 'accepted', 'preparing'].includes(currentStatusStr);
+  const isCancellationAllowed = ['pending', 'accepted', 'preparing', 'packed'].includes(currentStatusStr);
   const showLiveMap = currentStatusStr === 'out_for_delivery';
-  const isRiderAssigned = !!order.riders && !!order.rider_id;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -432,6 +493,35 @@ export default function OrderTrackingScreen() {
               </View>
             )}
           </View>
+
+          {/* CANCELLED ORDER CARD */}
+          {isCancelled && (
+            <View style={[styles.premiumCard, styles.cancelledInfoCard]}>
+              <Text style={styles.cancelledCardHeaderTitle}>Order Cancelled</Text>
+              <View style={styles.cancelledDivider} />
+
+              <View style={styles.cancelledDetailRow}>
+                <Text style={styles.cancelledDetailLabel}>Cancelled By</Text>
+                <Text style={styles.cancelledDetailValue}>
+                  {order.cancelled_by ? order.cancelled_by.charAt(0).toUpperCase() + order.cancelled_by.slice(1) : '—'}
+                </Text>
+              </View>
+
+              <View style={styles.cancelledDetailRow}>
+                <Text style={styles.cancelledDetailLabel}>Reason</Text>
+                <Text style={styles.cancelledDetailValue}>
+                  {order.cancel_reason || '—'}
+                </Text>
+              </View>
+
+              <View style={styles.cancelledDetailRow}>
+                <Text style={styles.cancelledDetailLabel}>Cancelled At</Text>
+                <Text style={[styles.cancelledDetailValue, { textAlign: 'right' }]}>
+                  {order.cancelled_at ? formatTimestamp(order.cancelled_at) : '—'}
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* DELIVERY OTP CARD */}
           {showOtpLayout ? (
@@ -624,7 +714,7 @@ export default function OrderTrackingScreen() {
                     </Text>
                     <Text style={styles.itemQuantity}>Qty: {item.quantity} × ₹{item.unit_price}</Text>
                   </View>
-                  <Text style={styles.itemTotal}>rm ₹{item.total_price}</Text>
+                  <Text style={styles.itemTotal}>₹{item.total_price}</Text>
                 </View>
               ))}
             </View>
@@ -648,7 +738,7 @@ export default function OrderTrackingScreen() {
             </View>
             <View style={styles.billRow}>
               <Text style={styles.billLabel}>Platform Gateway Fee</Text>
-              <Text style={styles.billValue}>₹3</Text>
+              <Text style={styles.billValue}>₹{order.platform_fee}</Text>
             </View>
             
             <Text style={styles.taxNoticeDisclaimerText}>Prices shown inclusive of all retail domestic GST taxation nodes.</Text>
@@ -675,9 +765,9 @@ export default function OrderTrackingScreen() {
           {/* CANCEL ORDER SECTION BUTTON */}
           {isCancellationAllowed && (
             <TouchableOpacity 
-              style={styles.cancelOrderOutlineButton} 
+              style={[styles.cancelOrderOutlineButton, isCancelling && styles.disabledButton]} 
               activeOpacity={0.7}
-              onPress={handleCancelOrder}
+              onPress={handleOpenCancelModal}
               disabled={isCancelling}
             >
               <Text style={styles.cancelOrderOutlineButtonText}>
@@ -701,6 +791,72 @@ export default function OrderTrackingScreen() {
           </View>
         </ScrollView>
       </Animated.View>
+
+      {/* CANCELLATION MODAL */}
+      <Modal
+        visible={showCancelModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCancelModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => !isCancelling && setShowCancelModal(false)} />
+          <View style={styles.modalSheetContainer}>
+            <View style={styles.modalHandleBar} />
+            <Text style={styles.modalTitle}>Cancel Order</Text>
+            <Text style={styles.modalSubtitle}>Please select a reason for cancelling your order:</Text>
+
+            <View style={styles.reasonsListContainer}>
+              {CANCELLATION_REASONS.map((reason) => {
+                const isSelected = selectedCancelReason === reason;
+                return (
+                  <TouchableOpacity
+                    key={reason}
+                    activeOpacity={0.7}
+                    disabled={isCancelling}
+                    style={[
+                      styles.reasonOptionCard,
+                      isSelected && styles.reasonOptionCardSelected
+                    ]}
+                    onPress={() => setSelectedCancelReason(reason)}
+                  >
+                    <Text style={[styles.reasonOptionText, isSelected && styles.reasonOptionTextSelected]}>
+                      {reason}
+                    </Text>
+                    <View style={[styles.radioButton, isSelected && styles.radioButtonSelected]}>
+                      {isSelected && <Text style={styles.radioCheckIcon}>✓</Text>}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                activeOpacity={0.7}
+                disabled={isCancelling}
+                onPress={() => setShowCancelModal(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>Keep Order</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalContinueButton,
+                  (!selectedCancelReason || isCancelling) && styles.modalContinueButtonDisabled
+                ]}
+                activeOpacity={0.8}
+                onPress={handleConfirmCancel}
+                disabled={!selectedCancelReason || isCancelling}
+              >
+                <Text style={styles.modalContinueButtonText}>
+                  {isCancelling ? "Processing..." : "Continue"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -843,6 +999,38 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontWeight: '600',
     marginTop: 6,
+  },
+  cancelledInfoCard: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+  },
+  cancelledCardHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#991B1B',
+  },
+  cancelledDivider: {
+    height: 1,
+    backgroundColor: '#FECACA',
+    marginVertical: 12,
+  },
+  cancelledDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  cancelledDetailLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#7F1D1D',
+  },
+  cancelledDetailValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#991B1B',
+    flexShrink: 1,
+    marginLeft: 12,
   },
   mapPlaceholderCard: {
     backgroundColor: '#FFFFFF',
@@ -993,38 +1181,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
-  },
-  riderStatePlaceholderBox: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  riderStatePlaceholderText: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  searchingRiderContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-  },
-  searchingRiderTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1E293B',
-  },
-  searchingRiderSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 2,
   },
   premiumCard: {
     backgroundColor: '#FFFFFF',
@@ -1450,5 +1606,128 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: '#EF4444',
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  // Modal & Cancellation Styles
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFill,
+  },
+  modalSheetContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 36,
+    maxHeight: '80%',
+  },
+  modalHandleBar: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#EAEFF3',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0D0D0D',
+    letterSpacing: -0.4,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 4,
+    marginBottom: 16,
+    fontWeight: '500',
+  },
+  reasonsListContainer: {
+    gap: 10,
+    marginVertical: 8,
+  },
+  reasonOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#F7F8FA',
+    borderWidth: 1.5,
+    borderColor: '#EAEFF3',
+  },
+  reasonOptionCardSelected: {
+    backgroundColor: '#22CC710D',
+    borderColor: '#22CC71',
+  },
+  reasonOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  reasonOptionTextSelected: {
+    color: '#0D0D0D',
+    fontWeight: '700',
+  },
+  radioButton: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  radioButtonSelected: {
+    backgroundColor: '#22CC71',
+    borderColor: '#22CC71',
+  },
+  radioCheckIcon: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#F7F8FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#EAEFF3',
+  },
+  modalCancelButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  modalContinueButton: {
+    flex: 1.2,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalContinueButtonDisabled: {
+    backgroundColor: '#CBD5E1',
+  },
+  modalContinueButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });
