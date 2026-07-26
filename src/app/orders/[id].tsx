@@ -304,12 +304,7 @@ export default function OrderTrackingScreen() {
 
       // Send Order Cancellation Notification
       try {
-        await notificationService.notifyCustomerOrderCancelled(
-          order.customer_id,
-          order.order_number,
-          id,
-          selectedCancelReason
-        );
+        await notificationService.getCustomerNotifications();
       } catch (notifErr) {
         console.error('Failed to send cancellation notification:', notifErr);
       }

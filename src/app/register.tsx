@@ -1,3 +1,4 @@
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -5,6 +6,7 @@ import {
   Alert,
   Animated,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -18,13 +20,12 @@ import { supabase } from '../lib/supabase';
 
 export default function RegisterScreen() {
   const router = useRouter();
-  
+
+  // Form State
   const [customerName, setCustomerName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  
+
   const [addressType, setAddressType] = useState('home');
   const [addressLine1, setAddressLine1] = useState('');
   const [addressLine2, setAddressLine2] = useState('');
@@ -32,14 +33,25 @@ export default function RegisterScreen() {
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [pinCode, setPinCode] = useState('');
-  
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+
   const [loading, setLoading] = useState(false);
+  const [detectingLocation, setDetectingLocation] = useState(false);
   const [focusedInput, setFocusedField] = useState<string | null>(null);
   const [termsAgreed, setTermsAgreed] = useState(true);
 
-  // Entrance Animations
+  // OTP Modal & Timer State
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpToken, setOtpToken] = useState('');
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [resendTimer, setResendTimer] = useState(60);
+  const [canResend, setResendAvailable] = useState(false);
+
+  // Animations Setup
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     Animated.parallel([
@@ -48,96 +60,249 @@ export default function RegisterScreen() {
     ]).start();
   }, []);
 
-  const handleRegister = async () => {
+  // Timer logic for OTP resend
+  useEffect(() => {
+    if (showOtpModal && resendTimer > 0) {
+      setResendAvailable(false);
+      timerRef.current = setTimeout(() => {
+        setResendTimer((prev) => prev - 1);
+      }, 1000);
+    } else if (resendTimer === 0) {
+      setResendAvailable(true);
+    }
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [showOtpModal, resendTimer]);
+
+  const handleGetCurrentLocation = async () => {
+    try {
+      setDetectingLocation(true);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== 'granted') {
+        Alert.alert(
+          'Location Permission Denied',
+          'Permission to access location was denied. Please fill in your address manually.'
+        );
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+      const lat = location.coords.latitude;
+      const lng = location.coords.longitude;
+      setLatitude(lat);
+      setLongitude(lng);
+
+      const geocodeResults = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+
+      if (geocodeResults && geocodeResults.length > 0) {
+        const item = geocodeResults[0];
+
+        const line1 = [item.name, item.streetNumber, item.street, item.subregion || item.district]
+          .filter(Boolean)
+          .join(', ');
+
+        if (line1) setAddressLine1(line1);
+        if (item.city) setCity(item.city);
+        if (item.region) setState(item.region);
+        if (item.postalCode) setPinCode(item.postalCode);
+
+        Alert.alert(
+          'Location Fetched 📍',
+          'Your current address details have been populated. You can edit them before completing registration.'
+        );
+      }
+    } catch (err: any) {
+      console.error('Location detection error:', err);
+      Alert.alert('Location Error', 'Unable to retrieve location. Please enter your address manually.');
+    } finally {
+      setDetectingLocation(false);
+    }
+  };
+
+  const validateRegistrationForm = async (): Promise<boolean> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phone.trim().replace(/[^0-9]/g, '');
+
     if (
-      !customerName || 
-      !email || 
-      !phone || 
-      !password || 
-      !confirmPassword ||
-      !addressLine1 ||
-      !city ||
-      !state ||
-      !pinCode
+      !customerName.trim() ||
+      !cleanEmail ||
+      !cleanPhone ||
+      !addressLine1.trim() ||
+      !city.trim() ||
+      !state.trim() ||
+      !pinCode.trim()
     ) {
-      Alert.alert('Error', 'All required fields must be filled.');
-      return;
+      Alert.alert('Missing Required Fields', 'Please complete all required fields marked with an asterisk (*).');
+      return false;
     }
 
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match.');
-      return;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return false;
     }
 
+    if (cleanPhone.length !== 10) {
+      Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit mobile phone number.');
+      return false;
+    }
+
+    // Check duplicate email
+    const { data: existingEmail } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+
+    if (existingEmail) {
+      Alert.alert('Account Exists', 'An account with this email address already exists. Please login instead.');
+      return false;
+    }
+
+    // Check duplicate phone
+    const { data: existingPhone } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('phone', cleanPhone)
+      .maybeSingle();
+
+    if (existingPhone) {
+      Alert.alert('Phone Number In Use', 'An account with this mobile phone number is already registered.');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleStartOtpFlow = async () => {
     setLoading(true);
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password: password,
+      const isValid = await validateRegistrationForm();
+      if (!isValid) {
+        setLoading(false);
+        return;
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+
+      // Trigger Passwordless Email OTP
+      const { error } = await supabase.auth.signInWithOtp({
+        email: cleanEmail,
+        options: {
+          shouldCreateUser: true,
+        },
       });
 
-      if (authError) throw authError;
+      if (error) throw error;
+
+      // Reset timer and show OTP modal
+      setResendTimer(60);
+      setOtpToken('');
+      setShowOtpModal(true);
+    } catch (error: any) {
+      Alert.alert('Registration Error', error?.message || 'Could not send verification OTP.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtpAndCreateProfile = async () => {
+    const cleanOtp = otpToken.trim();
+    if (cleanOtp.length !== 6) {
+      Alert.alert('Invalid OTP', 'Please enter a valid 6-digit verification code.');
+      return;
+    }
+
+    setVerifyingOtp(true);
+
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanPhone = phone.trim().replace(/[^0-9]/g, '');
+
+      // Verify OTP token with Supabase Auth
+      const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanOtp,
+        type: 'email',
+      });
+
+      if (verifyError) throw verifyError;
 
       const user = authData?.user;
+      if (!user) throw new Error('Failed to retrieve authenticated user details.');
 
-      if (user) {
-        const { data: customerData, error: dbError } = await supabase
-          .from('customers')
+      // Insert customer record
+      const { data: customerData, error: dbError } = await supabase
+        .from('customers')
+        .insert([
+          {
+            auth_user_id: user.id,
+            customer_name: customerName.trim(),
+            email: cleanEmail,
+            phone: cleanPhone,
+          },
+        ])
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+
+      // Insert customer address record
+      if (customerData) {
+        const { error: addressError } = await supabase
+          .from('customer_addresses')
           .insert([
             {
-              auth_user_id: user.id,
-              customer_name: customerName.trim(),
-              email: email.trim(),
-              phone: phone.trim(),
+              customer_id: customerData.id,
+              address_line1: addressLine1.trim(),
+              address_line2: addressLine2.trim(),
+              city: city.trim(),
+              state: state.trim(),
+              pin_code: pinCode.trim(),
+              landmark: landmark.trim(),
+              address_type: addressType,
+              is_default: true,
+              latitude: latitude,
+              longitude: longitude,
             },
-          ])
-          .select()
-          .single();
+          ]);
 
-        if (dbError) throw dbError;
-
-        if (customerData) {
-          const { error: addressError } = await supabase
-            .from('customer_addresses')
-            .insert([
-              {
-                customer_id: customerData.id,
-                address_line1: addressLine1.trim(),
-                address_line2: addressLine2.trim(),
-                city: city.trim(),
-                state: state.trim(),
-                pin_code: pinCode.trim(),
-                landmark: landmark.trim(),
-                address_type: addressType,
-                is_default: true,
-              },
-            ]);
-
-          if (addressError) throw addressError;
-        }
-
-        Alert.alert(
-          'Registration Successful',
-          'Your account has been created successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                router.replace('/login');
-              },
-            },
-          ]
-        );
-      } else {
-        throw new Error('Something went wrong during registration.');
+        if (addressError) throw addressError;
       }
+
+      setShowOtpModal(false);
+      router.replace('/');
     } catch (error: any) {
-      console.log('REGISTER ERROR:', error);
-      Alert.alert(
-        'Registration Failed',
-        JSON.stringify(error, null, 2)
-      );
+      console.error('OTP Verification Error:', error);
+      Alert.alert('Verification Failed', error?.message || 'Invalid code. Please try again.');
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!canResend) return;
+    try {
+      setLoading(true);
+      const cleanEmail = email.trim().toLowerCase();
+      const { error } = await supabase.auth.signInWithOtp({
+        email: cleanEmail,
+        options: {
+          shouldCreateUser: true,
+        },
+      });
+
+      if (error) throw error;
+
+      setResendTimer(60);
+      setResendAvailable(false);
+      Alert.alert('OTP Resent ✉️', 'A new 6-digit code has been sent to your email.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to resend OTP code.');
     } finally {
       setLoading(false);
     }
@@ -193,42 +358,13 @@ export default function RegisterScreen() {
               <View style={[styles.inputContainer, focusedInput === 'phone' && styles.inputFocused]}>
                 <TextInput
                   style={styles.inputField}
-                  placeholder="123-456-7890"
+                  placeholder="10-digit mobile number"
                   placeholderTextColor="#94A3B8"
                   value={phone}
                   onChangeText={setPhone}
                   keyboardType="phone-pad"
+                  maxLength={10}
                   onFocus={() => setFocusedField('phone')}
-                  onBlur={() => setFocusedField(null)}
-                />
-              </View>
-
-              <Text style={styles.fieldLabel}>Password *</Text>
-              <View style={[styles.inputContainer, focusedInput === 'pass' && styles.inputFocused]}>
-                <TextInput
-                  style={styles.inputField}
-                  placeholder="********"
-                  placeholderTextColor="#94A3B8"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  onFocus={() => setFocusedField('pass')}
-                  onBlur={() => setFocusedField(null)}
-                />
-              </View>
-
-              <Text style={styles.fieldLabel}>Confirm Password *</Text>
-              <View style={[styles.inputContainer, focusedInput === 'confirm' && styles.inputFocused]}>
-                <TextInput
-                  style={styles.inputField}
-                  placeholder="********"
-                  placeholderTextColor="#94A3B8"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  onFocus={() => setFocusedField('confirm')}
                   onBlur={() => setFocusedField(null)}
                 />
               </View>
@@ -237,6 +373,20 @@ export default function RegisterScreen() {
             {/* Card 2: Address Information */}
             <View style={styles.formSectionCard}>
               <Text style={styles.cardHeaderHeading}>Delivery Address</Text>
+
+              {/* Location Action Button */}
+              <TouchableOpacity
+                style={styles.getCurrentLocationButton}
+                onPress={handleGetCurrentLocation}
+                disabled={detectingLocation}
+                activeOpacity={0.8}
+              >
+                {detectingLocation ? (
+                  <ActivityIndicator size="small" color="#22CC71" />
+                ) : (
+                  <Text style={styles.getCurrentLocationButtonText}>📍 Get Current Location</Text>
+                )}
+              </TouchableOpacity>
 
               <Text style={styles.fieldLabel}>Address Type</Text>
               <View style={styles.radioGroup}>
@@ -340,7 +490,7 @@ export default function RegisterScreen() {
                 />
               </View>
 
-              {/* UI Checkbox Placeholder Row */}
+              {/* Terms Checkbox Row */}
               <TouchableOpacity 
                 activeOpacity={0.8} 
                 style={styles.checkboxLineRow} 
@@ -356,14 +506,14 @@ export default function RegisterScreen() {
                 </Text>
               </TouchableOpacity>
 
-              {/* Action Submit Elements */}
+              {/* Submit CTA */}
               <TouchableOpacity
-                style={[styles.submitButton, !termsAgreed && { backgroundColor: '#CBD5E1' }]}
-                onPress={handleRegister}
+                style={[styles.submitButton, (!termsAgreed || loading) && { backgroundColor: '#CBD5E1' }]}
+                onPress={handleStartOtpFlow}
                 disabled={loading || !termsAgreed}
                 activeOpacity={0.85}
               >
-                {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitButtonText}>Register</Text>}
+                {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitButtonText}>Continue ➔</Text>}
               </TouchableOpacity>
 
               <View style={styles.alternativeLoginLinkRow}>
@@ -377,6 +527,72 @@ export default function RegisterScreen() {
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* 6-DIGIT EMAIL OTP VERIFICATION MODAL */}
+      <Modal
+        visible={showOtpModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOtpModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalBadgeIconCircle}>
+              <Text style={{ fontSize: 28 }}>🔑</Text>
+            </View>
+            <Text style={styles.modalTitle}>Enter Verification Code</Text>
+            <Text style={styles.modalSubtitle}>
+              We sent a 6-digit code to{' '}
+              <Text style={{ color: '#0D0D0D', fontWeight: '800' }}>{email}</Text>
+            </Text>
+
+            <View style={styles.otpInputBox}>
+              <TextInput
+                style={styles.otpInputField}
+                placeholder="• • • • • •"
+                placeholderTextColor="#CBD5E1"
+                value={otpToken}
+                onChangeText={setOtpToken}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.verifySubmitBtn}
+              onPress={handleVerifyOtpAndCreateProfile}
+              disabled={verifyingOtp}
+              activeOpacity={0.85}
+            >
+              {verifyingOtp ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.verifySubmitBtnText}>Verify & Create Profile</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.resendCodeBtn, !canResend && { opacity: 0.6 }]}
+              onPress={handleResendOtp}
+              disabled={!canResend || loading}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.resendCodeText}>
+                {canResend ? 'Resend Code' : `Resend Code in ${resendTimer}s`}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelModalBtn}
+              onPress={() => setShowOtpModal(false)}
+              disabled={verifyingOtp}
+            >
+              <Text style={styles.cancelModalText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -395,7 +611,7 @@ const styles = StyleSheet.create({
   },
   brandHeader: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
     marginTop: 16,
   },
   logoBadge: {
@@ -450,7 +666,23 @@ const styles = StyleSheet.create({
     color: '#22CC71',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+    marginBottom: 14,
+  },
+  getCurrentLocationButton: {
+    backgroundColor: '#E8FBF0',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#22CC7140',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 16,
+  },
+  getCurrentLocationButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#22CC71',
   },
   fieldLabel: {
     fontSize: 11,
@@ -588,5 +820,94 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#22CC71',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(13, 13, 13, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  modalBadgeIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#E8FBF0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0D0D0D',
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  otpInputBox: {
+    width: '100%',
+    backgroundColor: '#F7F8FA',
+    borderWidth: 1.5,
+    borderColor: '#22CC71',
+    borderRadius: 16,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  otpInputField: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#0D0D0D',
+    textAlign: 'center',
+    letterSpacing: 8,
+  },
+  verifySubmitBtn: {
+    width: '100%',
+    backgroundColor: '#22CC71',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  verifySubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  resendCodeBtn: {
+    paddingVertical: 6,
+    marginBottom: 8,
+  },
+  resendCodeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#22CC71',
+  },
+  cancelModalBtn: {
+    paddingVertical: 6,
+  },
+  cancelModalText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#94A3B8',
   },
 });

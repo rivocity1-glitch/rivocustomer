@@ -284,7 +284,8 @@ export default function CheckoutScreen() {
         });
       }
 
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      const { data, error: userError } = await supabase.auth.getUser();
+      const user = data?.user ?? null;
 
       if (userError || !user) {
         Alert.alert('Login Required', 'Please login before placing an order');
@@ -484,6 +485,7 @@ export default function CheckoutScreen() {
         if (canOpen) {
           await Linking.openURL(targetUri);
           setPaymentSubmitted(true);
+          placeOrder();
         } else {
           setMissingAppModal({ visible: true, appName: 'No UPI Apps found' });
         }
@@ -492,6 +494,7 @@ export default function CheckoutScreen() {
         if (canOpen) {
           await Linking.openURL(targetUri);
           setPaymentSubmitted(true);
+          placeOrder();
         } else {
           setMissingAppModal({ visible: true, appName: appConfig.name });
         }
@@ -510,6 +513,18 @@ export default function CheckoutScreen() {
       Alert.alert("Success", "OTP copied successfully.");
     }
   }
+
+  const handleMainButtonPress = () => {
+    if (paymentMethod === 'online') {
+      if (!selectedOnlineApp) {
+        Alert.alert("Please select a payment app.");
+        return;
+      }
+      handleAppSelection(selectedOnlineApp);
+    } else {
+      placeOrder();
+    }
+  };
 
   async function placeOrder() {
     if (isPlacingOrder) return;
@@ -579,6 +594,8 @@ export default function CheckoutScreen() {
       console.log("Database Address:", activeAddress);
       console.log("Address ID:", activeAddress.id);
 
+      const isOnline = paymentMethod === 'online';
+
       const orderPayload = {
         order_number: preGeneratedOrderNumber,
         customer_id: testCustomer.id,
@@ -589,8 +606,8 @@ export default function CheckoutScreen() {
         delivery_fee: checkoutCharges.deliveryFee,
         platform_fee: checkoutCharges.platformFee,
         total_amount: checkoutCharges.grandTotal,
-        payment_status: 'pending',
-        order_status: 'pending',
+        payment_status: isOnline ? 'pending_verification' : 'pending',
+        order_status: isOnline ? 'payment_verification' : 'pending',
         actual_distance_km: distance || 0,
         chargeable_distance_km: checkoutCharges.chargeableDistanceKm,
         rider_earning: checkoutCharges.riderEarning,
@@ -906,6 +923,17 @@ export default function CheckoutScreen() {
         {/* Payment Methods */}
         <View style={styles.card}>
           <Text style={styles.sectionHeader}>🎒 Payment Method</Text>
+
+          {/* Informational Notice Box for Online Payments */}
+          <View style={styles.noticeCardContainer}>
+            <Text style={styles.noticeCardIcon}>🚧</Text>
+            <View style={styles.noticeCardTextWrapper}>
+              <Text style={styles.noticeCardTitle}>Online Payments Coming Soon</Text>
+              <Text style={styles.noticeCardBody}>
+                We are currently improving our online payment experience. For now, please choose Cash on Delivery. You can also pay online directly to the rider at the time of delivery if required.
+              </Text>
+            </View>
+          </View>
           
           <Pressable 
             onPress={() => {
@@ -923,17 +951,22 @@ export default function CheckoutScreen() {
             <Text style={styles.paymentMethodNameText}>Cash on Delivery</Text>
           </Pressable>
 
-          <Pressable 
-            onPress={() => setPaymentMethod('online')}
-            style={({ pressed }) => [
+          {/* Disabled Online Payment Row */}
+          <View 
+            style={[
               styles.row, 
-              paymentMethod === 'online' ? styles.paymentOptionSelected : styles.paymentOptionUnselected,
-              pressed && styles.microInteractionState
+              styles.paymentOptionDisabled,
+              { justifyContent: 'space-between' }
             ]}
           >
-            <View style={paymentMethod === 'online' ? styles.radioFilled : styles.radioEmpty} />
-            <Text style={styles.paymentMethodNameText}>Online Payment</Text>
-          </Pressable>
+            <View style={styles.row}>
+              <View style={styles.radioDisabled} />
+              <Text style={styles.paymentMethodDisabledText}>Online Payment</Text>
+            </View>
+            <View style={styles.comingSoonBadge}>
+              <Text style={styles.comingSoonBadgeText}>Coming Soon</Text>
+            </View>
+          </View>
 
           {paymentMethod === 'online' && (
             <View style={styles.modernAppsContainer}>
@@ -999,7 +1032,7 @@ export default function CheckoutScreen() {
           <Text style={styles.stickyTotalAmountText}>₹{checkoutCharges.grandTotal}</Text>
         </View>
         <Pressable
-          onPress={placeOrder}
+          onPress={handleMainButtonPress}
           disabled={!address || isPlacingOrder || !customerId}
           style={({ pressed }) => {
             const styleArray: any[] = [styles.stickyOrderPlacementButton];
@@ -1057,6 +1090,14 @@ export default function CheckoutScreen() {
                 See you again in {address?.city || 'your city'} 👋
               </Text>
 
+              {successOrderDetails?.paymentMethod === 'online' && (
+                <View style={styles.verificationBanner}>
+                  <Text style={styles.verificationBannerText}>
+                    Your payment is being verified. The vendor will begin preparing your order after verification.
+                  </Text>
+                </View>
+              )}
+
               <View style={styles.successMetaCard}>
                 <View style={[styles.row, styles.metaItemRow]}>
                   <Text style={styles.metaCardLabel}>Order Number</Text>
@@ -1074,9 +1115,9 @@ export default function CheckoutScreen() {
                 </View>
                 <View style={styles.metaItemSeparator} />
                 <View style={[styles.row, styles.metaItemRow]}>
-                  <Text style={styles.metaCardLabel}>Payment Method</Text>
+                  <Text style={styles.metaCardLabel}>Payment Status</Text>
                   <Text style={styles.metaCardValue}>
-                    {successOrderDetails?.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment'}
+                    {successOrderDetails?.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Pending Verification'}
                   </Text>
                 </View>
               </View>
@@ -1415,6 +1456,36 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#10B981',
   },
+  noticeCardContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+    alignItems: 'flex-start',
+  },
+  noticeCardIcon: {
+    fontSize: 18,
+    marginRight: 10,
+    marginTop: 2,
+  },
+  noticeCardTextWrapper: {
+    flex: 1,
+  },
+  noticeCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400E',
+    marginBottom: 3,
+  },
+  noticeCardBody: {
+    fontSize: 12,
+    color: '#B45309',
+    lineHeight: 17,
+    fontWeight: '500',
+  },
   paymentOptionSelected: {
     backgroundColor: '#F0FDF4',
     borderWidth: 2,
@@ -1429,6 +1500,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
   },
+  paymentOptionDisabled: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 16,
+    opacity: 0.65,
+  },
   radioFilled: {
     width: 18,
     height: 18,
@@ -1438,10 +1517,37 @@ const styles = StyleSheet.create({
     marginRight: 12,
     backgroundColor: '#FFFFFF',
   },
+  radioDisabled: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#E2E8F0',
+    marginRight: 12,
+  },
   paymentMethodNameText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#1E293B',
+  },
+  paymentMethodDisabledText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  comingSoonBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  comingSoonBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
   },
   radioEmpty: {
     width: 18,
@@ -1563,6 +1669,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 6,
     fontWeight: '600',
+  },
+  verificationBanner: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 12,
+    padding: 12,
+    width: '100%',
+    marginTop: 14,
+  },
+  verificationBannerText: {
+    fontSize: 12,
+    color: '#92400E',
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 16,
   },
   successMetaCard: {
     backgroundColor: '#FFFFFF',

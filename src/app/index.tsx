@@ -64,8 +64,16 @@ export default function HomeScreen() {
 
       if (!user) return;
 
+      const channelName = `home-notification-badge-${user.id}`;
+
+      // Clean up previous channel instance if it exists
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+
+      // Attach all listeners BEFORE calling .subscribe()
       channel = supabase
-        .channel(`home-notification-badge-${user.id}`)
+        .channel(channelName)
         .on(
           'postgres_changes',
           {
@@ -78,8 +86,9 @@ export default function HomeScreen() {
             const updatedCount = await getUnreadCustomerNotificationCount();
             setUnreadCount(updatedCount);
           }
-        )
-        .subscribe();
+        );
+
+      channel.subscribe();
     }
 
     initNotificationListener();

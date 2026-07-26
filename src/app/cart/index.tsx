@@ -187,10 +187,6 @@ export default function CartScreen() {
   }, [cartItems, distance, vendorPlanName, platformFeeFromConfig, deliveryConfig]);
 
   const { itemsTotal, deliveryFee, platformFee, grandTotal } = billingBreakdown;
-  
-  // Quick Commerce Premium Hook Calculations
-  const dummyMrpTotal = Math.round(itemsTotal * 1.25);
-  const totalSavings = dummyMrpTotal - itemsTotal;
 
   // Premium Skeleton Loading View Mask Layout
   if (loading) {
@@ -266,8 +262,8 @@ export default function CartScreen() {
 
               <View style={styles.cardMainContentArea}>
                 {/* Product Image Placement */}
-                {(item as any).image_url ? (
-                  <Image source={{ uri: (item as any).image_url }} style={styles.productThumbnailImage} />
+                {item.image_url ? (
+                  <Image source={{ uri: item.image_url }} style={styles.productThumbnailImage} />
                 ) : (
                   <View style={styles.fallbackThumbnailImageGraphic}>
                     <Text style={styles.fallbackThumbnailLetter}>
@@ -331,17 +327,6 @@ export default function CartScreen() {
           )}
           ListFooterComponent={
             <View style={{ gap: 14, marginTop: 8 }}>
-              {/* SAVINGS PROMOTIONAL CARD */}
-              {totalSavings > 0 && (
-                <View style={styles.savingsPromotionBannerCard}>
-                  <Text style={styles.savingsBannerIcon}>🎉</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.savingsBannerTitleText}>You are saving ₹{totalSavings} on this order</Text>
-                    <Text style={styles.savingsBannerSubText}>Rivo matches top wholesale store value discounts</Text>
-                  </View>
-                </View>
-              )}
-
               {/* BILLING SUMMARY SECTION */}
               <View style={styles.billContainer}>
                 <View style={styles.billHeaderRow}>
@@ -576,30 +561,6 @@ const styles = StyleSheet.create({
     color: '#0D0D0D',
     paddingHorizontal: 6,
     textAlign: 'center',
-  },
-  savingsPromotionBannerCard: {
-    backgroundColor: '#E8FBF0',
-    borderRadius: 16,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#22CC7125',
-    gap: 12,
-  },
-  savingsBannerIcon: {
-    fontSize: 22,
-  },
-  savingsBannerTitleText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#22CC71',
-  },
-  savingsBannerSubText: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-    fontWeight: '500',
   },
   billContainer: {
     backgroundColor: '#FFFFFF',

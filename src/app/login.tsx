@@ -20,23 +20,28 @@ export default function LoginScreen() {
   const router = useRouter();
 
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpToken, setOtpToken] = useState('');
   const [loading, setLoading] = useState(false);
-  const [secureText, setSecureText] = useState(true);
   const [emailFocused, setEmailFocused] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [otpFocused, setOtpFocused] = useState(false);
+
+  // Timer State
+  const [resendTimer, setResendTimer] = useState(60);
+  const [canResend, setResendAvailable] = useState(false);
 
   // Animations Setup
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const logoScale = useRef(new Animated.Value(0.8)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // Check if user is already logged in to prevent re-asking for login credentials
     async function checkExistingSession() {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+      if (session?.user) {
+        await ensureCustomerRecordExists(session.user);
         router.replace('/');
       }
     }
@@ -56,27 +61,137 @@ export default function LoginScreen() {
     ).start();
   }, []);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields.');
+  // Timer logic for OTP resend
+  useEffect(() => {
+    if (otpSent && resendTimer > 0) {
+      setResendAvailable(false);
+      timerRef.current = setTimeout(() => {
+        setResendTimer((prev) => prev - 1);
+      }, 1000);
+    } else if (resendTimer === 0) {
+      setResendAvailable(true);
+    }
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [otpSent, resendTimer]);
+
+  // Ensure customer profile & address records exist
+  const ensureCustomerRecordExists = async (user: any) => {
+    try {
+      const { data: existingCustomer } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+
+      if (!existingCustomer) {
+        const fullCustomerName = user.user_metadata?.full_name || 'Rivo Customer';
+        const userEmail = user.email || '';
+        const userPhone = user.phone || '';
+
+        const { data: newCustomer, error: custError } = await supabase
+          .from('customers')
+          .insert([
+            {
+              auth_user_id: user.id,
+              customer_name: fullCustomerName,
+              email: userEmail,
+              phone: userPhone,
+            },
+          ])
+          .select()
+          .single();
+
+        if (!custError && newCustomer) {
+          await supabase
+            .from('customer_addresses')
+            .insert([
+              {
+                customer_id: newCustomer.id,
+                address_line1: '',
+                address_line2: '',
+                city: '',
+                state: '',
+                pin_code: '',
+                landmark: '',
+                address_type: 'home',
+                is_default: true,
+                latitude: null,
+                longitude: null,
+              },
+            ]);
+        }
+      }
+    } catch (e) {
+      console.error('Error auto-provisioning customer profile:', e);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail) {
+      Alert.alert('Missing Email', 'Please enter your email address.');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
     }
 
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password,
+      const { error } = await supabase.auth.signInWithOtp({
+        email: cleanEmail,
+        options: {
+          shouldCreateUser: true,
+        },
       });
 
-      if (error) {
-        Alert.alert('Login Failed', error.message);
-      } else {
+      if (error) throw error;
+
+      setOtpSent(true);
+      setResendTimer(60);
+      setResendAvailable(false);
+      Alert.alert('OTP Sent ✉️', 'A 6-digit verification code has been dispatched to your email.');
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'Could not send verification code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanOtp = otpToken.trim();
+
+    if (cleanOtp.length !== 6) {
+      Alert.alert('Invalid OTP', 'Please enter a valid 6-digit verification code.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanOtp,
+        type: 'email',
+      });
+
+      if (error) throw error;
+
+      if (data?.user) {
+        await ensureCustomerRecordExists(data.user);
         router.replace('/');
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'An unexpected error occurred.');
+      Alert.alert('Verification Failed', error?.message || 'Invalid code. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -94,12 +209,12 @@ export default function LoginScreen() {
                 <Text style={styles.logoSymbol}>R</Text>
               </Animated.View>
               <Text style={styles.welcomeHeading}>Welcome Back</Text>
-              <Text style={styles.welcomeSubtitle}>Everything nearby. Delivered fast.</Text>
+              <Text style={styles.welcomeSubtitle}>Passwordless instant email sign-in.</Text>
             </View>
 
-            {/* Premium Interactive Forms Card */}
+            {/* Forms Card */}
             <View style={styles.formCard}>
-              <Text style={styles.inputLabel}>Email</Text>
+              <Text style={styles.inputLabel}>Email Address</Text>
               <View style={[styles.inputContainer, emailFocused && styles.inputFocused]}>
                 <TextInput
                   style={styles.inputField}
@@ -110,48 +225,80 @@ export default function LoginScreen() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  editable={!otpSent}
                   onFocus={() => setEmailFocused(true)}
                   onBlur={() => setEmailFocused(false)}
                 />
               </View>
 
-              <View style={styles.passwordHeaderRow}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <TouchableOpacity activeOpacity={0.6}>
-                  <Text style={styles.forgotPasswordText}>Forgot Password? (Soon)</Text>
+              {/* OTP Field revealed once code is sent */}
+              {otpSent && (
+                <>
+                  <Text style={styles.inputLabel}>6-Digit Verification Code</Text>
+                  <View style={[styles.inputContainer, otpFocused && styles.inputFocused]}>
+                    <TextInput
+                      style={[styles.inputField, { letterSpacing: 4, fontWeight: '800' }]}
+                      placeholder="• • • • • •"
+                      placeholderTextColor="#CBD5E1"
+                      value={otpToken}
+                      onChangeText={setOtpToken}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      onFocus={() => setOtpFocused(true)}
+                      onBlur={() => setOtpFocused(false)}
+                    />
+                  </View>
+                </>
+              )}
+
+              {/* Primary Action Button */}
+              {!otpSent ? (
+                <TouchableOpacity
+                  style={styles.loginSubmitButton}
+                  onPress={handleSendOtp}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.loginButtonText}>Send OTP ✉️</Text>}
                 </TouchableOpacity>
-              </View>
-              <View style={[styles.inputContainer, passwordFocused && styles.inputFocused]}>
-                <TextInput
-                  style={[styles.inputField, { paddingRight: 45 }]}
-                  placeholder="********"
-                  placeholderTextColor="#94A3B8"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={secureText}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onFocus={() => setPasswordFocused(true)}
-                  onBlur={() => setPasswordFocused(false)}
-                />
-                <TouchableOpacity 
-                  style={styles.toggleVisibilityButton}
-                  onPress={() => setSecureText(!secureText)}
+              ) : (
+                <TouchableOpacity
+                  style={styles.loginSubmitButton}
+                  onPress={handleVerifyOtp}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.loginButtonText}>Verify & Login</Text>}
+                </TouchableOpacity>
+              )}
+
+              {/* Resend Code Link */}
+              {otpSent && (
+                <TouchableOpacity
+                  style={{ marginTop: 12, alignItems: 'center' }}
+                  onPress={handleSendOtp}
+                  disabled={!canResend || loading}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.toggleIcon}>{secureText ? '👁️' : '🙈'}</Text>
+                  <Text style={[styles.resendText, !canResend && { color: '#94A3B8' }]}>
+                    {canResend ? 'Resend Verification Code' : `Resend Code in ${resendTimer}s`}
+                  </Text>
                 </TouchableOpacity>
-              </View>
+              )}
 
-              {/* Primary Premium CTA Panel */}
-              <TouchableOpacity
-                style={styles.loginSubmitButton}
-                onPress={handleLogin}
-                disabled={loading}
-                activeOpacity={0.85}
-              >
-                {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.loginButtonText}>Login</Text>}
-              </TouchableOpacity>
+              {/* Toggle Back to Email Option */}
+              {otpSent && (
+                <TouchableOpacity
+                  style={{ marginTop: 8, alignItems: 'center' }}
+                  onPress={() => {
+                    setOtpSent(false);
+                    setOtpToken('');
+                  }}
+                  disabled={loading}
+                >
+                  <Text style={styles.changeEmailText}>Change Email Address</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 style={styles.registerNavigateButton}
@@ -161,20 +308,6 @@ export default function LoginScreen() {
               >
                 <Text style={styles.registerButtonText}>Create Account</Text>
               </TouchableOpacity>
-            </View>
-
-            {/* Premium Social Sign In Section Placeholders */}
-            <View style={styles.socialAuthContainer}>
-              <View style={styles.dividerRow}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>OR SECURE ACCESS WITH</Text>
-                <View style={styles.dividerLine} />
-              </View>
-
-              <View style={styles.socialButtonPlaceholder}>
-                <Text style={styles.socialButtonText}>🌐 Continue with Google</Text>
-                <View style={styles.soonBadge}><Text style={styles.soonBadgeText}>SOON</Text></View>
-              </View>
             </View>
 
             {/* Compliant Subtext Footer */}
@@ -210,7 +343,7 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
   },
   logoCircle: {
     width: 68,
@@ -256,16 +389,6 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 2,
   },
-  passwordHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  forgotPasswordText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#94A3B8',
-  },
   inputLabel: {
     fontSize: 11,
     fontWeight: '900',
@@ -297,15 +420,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0D0D0D',
   },
-  toggleVisibilityButton: {
-    position: 'absolute',
-    right: 14,
-    height: '100%',
-    justifyContent: 'center',
-  },
-  toggleIcon: {
-    fontSize: 16,
-  },
   loginSubmitButton: {
     backgroundColor: '#22CC71',
     width: '100%',
@@ -325,6 +439,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
+  resendText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#22CC71',
+  },
+  changeEmailText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
   registerNavigateButton: {
     width: '100%',
     padding: 15,
@@ -333,68 +457,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: '#22CC71',
-    marginTop: 12,
+    marginTop: 14,
   },
   registerButtonText: {
     color: '#22CC71',
     fontSize: 15,
     fontWeight: '800',
   },
-  socialAuthContainer: {
-    width: '100%',
-    marginTop: 24,
-    gap: 10,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    marginBottom: 4,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#EAEFF3',
-  },
-  dividerText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#94A3B8',
-    letterSpacing: 0.4,
-  },
-  socialButtonPlaceholder: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#EAEFF3',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    opacity: 0.65,
-  },
-  socialButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0D0D0D',
-  },
-  soonBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  soonBadgeText: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: '#64748B',
-  },
   footerContainer: {
-    marginTop: 32,
+    marginTop: 28,
     paddingHorizontal: 16,
   },
   footerText: {

@@ -7,18 +7,19 @@
     "icon": "./assets/images/icon.png",
     "scheme": "rivocustomer",
     "userInterfaceStyle": "automatic",
+    "owner": "rivo.ved",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.rivo.city.customer",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "package": "com.rivo.city.customer"
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "static",
@@ -40,7 +41,7 @@
       "expo-image",
       "expo-status-bar",
       "expo-web-browser",
-      "@react-native-firebase/app"
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -49,9 +50,8 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "54a59530-c7d2-4a11-9051-2af6a7a6829b"
+        "projectId": "8cad37bd-9ebb-457c-96bb-0c4fcc5e2925"
       }
-    },
-    "owner": "rivo.ved"
+    }
   }
 }

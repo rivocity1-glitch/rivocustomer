@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1061786190111",
+    "project_id": "rivocity--customer",
+    "storage_bucket": "rivocity--customer.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1061786190111:android:8348ea960908781281302a",
+        "android_client_info": {
+          "package_name": "com.rivo.city.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyByFYpSh2c1aQ0oeJA2sMaZW-0lx0AAuR8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

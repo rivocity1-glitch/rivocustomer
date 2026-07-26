@@ -89,3 +89,9 @@ export async function getUnreadCustomerNotificationCount(): Promise<number> {
 
   return count || 0;
 }
+
+export const notificationService = {
+  getCustomerNotifications,
+  markCustomerNotificationAsRead,
+  getUnreadCustomerNotificationCount,
+};
