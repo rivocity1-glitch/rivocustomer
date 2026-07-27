@@ -1,13 +1,18 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+// src/app/store/[id].tsx
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
-  Easing,
+  FlatList,
   Image,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -18,8 +23,8 @@ import { supabase } from '../../lib/supabase';
 
 // --- TYPES ---
 interface BusinessHoursDay {
-  open?: string; // "09:00"
-  close?: string; // "22:00"
+  open?: string;
+  close?: string;
   closed?: boolean;
 }
 
@@ -62,8 +67,8 @@ interface CategoryRow {
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = (SCREEN_WIDTH - 44) / 2;
-const BANNER_HEIGHT = 220;
+const CARD_WIDTH = (SCREEN_WIDTH - 40) / 2;
+const BANNER_HEIGHT = 240;
 
 // --- HAVERSINE DISTANCE HELPER ---
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -80,7 +85,7 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-// --- BUSINESS HOURS TIME PARSER ---
+// --- BUSINESS HOURS HELPER ---
 function parseTimeString(timeStr?: string): { hours: number; minutes: number } | null {
   if (!timeStr) return null;
   const parts = timeStr.split(':');
@@ -97,11 +102,6 @@ function format12Hour(timeStr?: string): string {
   return `${hours12}:${minsStr} ${period}`;
 }
 
-/**
- * Reads vendor_profiles.business_hours and vendor_profiles.store_status
- * strictly displaying today's schedule and the 5 backend determined status badges:
- * Open, Busy, Closing Soon, Closed, Temporarily Closed (manual override)
- */
 function getBusinessHoursDisplay(profile: VendorProfile | null) {
   const rawHours = profile?.business_hours;
   const rawStatus = (profile?.store_status || 'closed').toLowerCase();
@@ -128,7 +128,7 @@ function getBusinessHoursDisplay(profile: VendorProfile | null) {
     if (todaySchedule.closed) {
       timeLabel = 'Closed All Day';
     } else if (todaySchedule.open && todaySchedule.close) {
-      timeLabel = `${format12Hour(todaySchedule.open)} – ${format12Hour(todaySchedule.close)}`;
+      timeLabel = `${format12Hour(todaySchedule.open)} - ${format12Hour(todaySchedule.close)}`;
 
       const closeTime = parseTimeString(todaySchedule.close);
       if (closeTime) {
@@ -141,47 +141,52 @@ function getBusinessHoursDisplay(profile: VendorProfile | null) {
     }
   }
 
-  // 1. Temporarily Closed (Manual Override)
   if (manualOverride && rawStatus === 'closed') {
     return {
-      statusBadge: '🔴 Temporarily Closed',
+      statusType: 'closed' as const,
+      statusBadge: 'Closed',
       timeLabel,
       color: '#EF4444',
+      bgColor: '#FEF2F2',
     };
   }
 
-  // 2. Closed
   if (rawStatus === 'closed') {
     return {
-      statusBadge: '🔴 Closed',
+      statusType: 'closed' as const,
+      statusBadge: 'Closed',
       timeLabel,
       color: '#EF4444',
+      bgColor: '#FEF2F2',
     };
   }
 
-  // 3. High Volume / Busy
   if (rawStatus === 'busy') {
     return {
-      statusBadge: '🟠 Busy (High Volume)',
+      statusType: 'busy' as const,
+      statusBadge: 'Busy',
       timeLabel,
       color: '#F97316',
+      bgColor: '#FFF7ED',
     };
   }
 
-  // 4. Closing Soon
   if (isClosingSoon) {
     return {
-      statusBadge: '🟠 Closing Soon',
+      statusType: 'closing_soon' as const,
+      statusBadge: 'Closing Soon',
       timeLabel,
       color: '#F97316',
+      bgColor: '#FFF7ED',
     };
   }
 
-  // 5. Open
   return {
-    statusBadge: '🟢 Open Now',
+    statusType: 'open' as const,
+    statusBadge: 'Open Now',
     timeLabel,
     color: '#22CC71',
+    bgColor: '#E8FBF0',
   };
 }
 
@@ -232,160 +237,204 @@ function StoreSkeleton() {
   );
 }
 
-// --- VERTICAL SLIDESHOW BANNER CAROUSEL ---
-const VerticalBannerSlideshow = React.memo(({ banners }: { banners: string[] }) => {
-  const totalBanners = banners.length;
-
-  // Single Banner Case: Static View
-  if (totalBanners <= 1) {
-    return (
-      <View style={styles.carouselContainer}>
-        <Image
-          source={{ uri: banners[0] || 'https://via.placeholder.com/800x400/0F172A/FFFFFF?text=Store' }}
-          style={styles.bannerImage}
-          resizeMode="cover"
-        />
-        <View style={styles.bannerGradientOverlay} />
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={20} color="#0D0D0D" />
-        </Pressable>
-      </View>
-    );
-  }
-
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [imagesReady, setImagesReady] = useState(false);
-
-  const animValue = useRef(new Animated.Value(0)).current;
-  const isAnimating = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const nextIndex = (currentIndex + 1) % totalBanners;
-
-  // Preload Images First
+// --- BANNER ITEM MEMOIZED ---
+const BannerSlideItem = React.memo(({ item }: { item: string }) => {
   useEffect(() => {
-    let isMounted = true;
-    console.log('Banner Count:', banners.length);
-    console.log('Banner URLs:', banners);
-
-    setImagesReady(false);
-    Promise.all(banners.map((url) => Image.prefetch(url)))
-      .then(() => {
-        if (isMounted) setImagesReady(true);
-      })
-      .catch((err) => {
-        console.error('Error preloading banner images:', err);
-        if (isMounted) setImagesReady(true);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [banners]);
-
-  // Reset Slideshow when banners array changes dynamically
-  useEffect(() => {
-    setCurrentIndex(0);
-    animValue.setValue(0);
-    isAnimating.current = false;
-    if (timerRef.current) clearTimeout(timerRef.current);
-  }, [banners, animValue]);
-
-  // Infinite Autoplay Loop Sequence
-  useEffect(() => {
-    if (!imagesReady || totalBanners <= 1) return;
-
-    timerRef.current = setTimeout(() => {
-      if (isAnimating.current) return;
-      isAnimating.current = true;
-
-      animValue.setValue(0);
-      Animated.timing(animValue, {
-        toValue: 1,
-        duration: 800,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) {
-          setCurrentIndex((prev) => (prev + 1) % totalBanners);
-          animValue.setValue(0);
-          isAnimating.current = false;
-        }
-      });
-    }, 3500);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [currentIndex, imagesReady, totalBanners, animValue]);
-
-  const currentTranslateY = animValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -BANNER_HEIGHT],
-  });
-
-  const currentOpacity = animValue.interpolate({
-    inputRange: [0, 0.8, 1],
-    outputRange: [1, 0.3, 0],
-  });
-
-  const nextTranslateY = animValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [BANNER_HEIGHT, 0],
-  });
-
-  const nextOpacity = animValue.interpolate({
-    inputRange: [0, 0.2, 1],
-    outputRange: [0, 0.7, 1],
-  });
+    if (item) Image.prefetch(item);
+  }, [item]);
 
   return (
-    <View style={styles.carouselContainer}>
-      {/* Active Exiting Banner */}
-      <Animated.View
-        style={[
-          styles.bannerSlideAbsolute,
-          {
-            transform: [{ translateY: currentTranslateY }],
-            opacity: currentOpacity,
-          },
-        ]}
-      >
-        <Image
-          source={{ uri: banners[currentIndex] }}
-          style={styles.bannerImage}
-          resizeMode="cover"
-        />
-        <View style={styles.bannerGradientOverlay} />
-      </Animated.View>
-
-      {/* Incoming Target Banner */}
-      <Animated.View
-        style={[
-          styles.bannerSlideAbsolute,
-          {
-            transform: [{ translateY: nextTranslateY }],
-            opacity: nextOpacity,
-          },
-        ]}
-      >
-        <Image
-          source={{ uri: banners[nextIndex] }}
-          style={styles.bannerImage}
-          resizeMode="cover"
-        />
-        <View style={styles.bannerGradientOverlay} />
-      </Animated.View>
-
-      {/* Back Button */}
-      <Pressable onPress={() => router.back()} style={styles.backButton}>
-        <Ionicons name="arrow-back" size={20} color="#0D0D0D" />
-      </Pressable>
+    <View style={styles.bannerItemContainer}>
+      <Image source={{ uri: item }} style={styles.bannerImage} resizeMode="cover" />
+      <LinearGradient
+        colors={['rgba(0,0,0,0.55)', 'transparent', 'rgba(0,0,0,0.45)']}
+        locations={[0, 0.45, 1]}
+        style={styles.bannerGradientOverlay}
+      />
     </View>
   );
 });
 
-// --- STAGGERED PRODUCT CARD WITH PRESS FEEDBACK & AVAILABILITY CONTROLS ---
+// --- PRODUCTION-READY BANNER CAROUSEL ---
+interface BannerCarouselProps {
+  banners: string[];
+  shopName: string;
+  avatarUrl?: string | null;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+  onShare: () => void;
+}
+
+const BannerCarousel = React.memo(
+  ({ banners, shopName, avatarUrl, isFavorite, onToggleFavorite, onShare }: BannerCarouselProps) => {
+    const totalBanners = banners.length;
+    const flatListRef = useRef<FlatList>(null);
+    const [activeIndex, setActiveIndex] = useState(0);
+    const activeIndexRef = useRef(0);
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isUserDragging = useRef(false);
+
+    useEffect(() => {
+      activeIndexRef.current = activeIndex;
+    }, [activeIndex]);
+
+    // Recursive setTimeout for reliable autoplay
+    const clearAutoplayTimer = useCallback(() => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    }, []);
+
+    const scheduleNextSlide = useCallback(() => {
+      clearAutoplayTimer();
+      if (totalBanners <= 1 || isUserDragging.current) return;
+
+      timerRef.current = setTimeout(() => {
+        if (isUserDragging.current || totalBanners <= 1) return;
+
+        const nextIndex = (activeIndexRef.current + 1) % totalBanners;
+        requestAnimationFrame(() => {
+          flatListRef.current?.scrollToIndex({
+            index: nextIndex,
+            animated: true,
+          });
+        });
+      }, 4000);
+    }, [totalBanners, clearAutoplayTimer]);
+
+    useEffect(() => {
+      scheduleNextSlide();
+      return () => clearAutoplayTimer();
+    }, [activeIndex, totalBanners, scheduleNextSlide, clearAutoplayTimer]);
+
+    const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const contentOffset = event.nativeEvent.contentOffset.x;
+      const index = Math.round(contentOffset / SCREEN_WIDTH);
+      if (index >= 0 && index < totalBanners && index !== activeIndexRef.current) {
+        setActiveIndex(index);
+      }
+    };
+
+    const handleScrollBeginDrag = () => {
+      isUserDragging.current = true;
+      clearAutoplayTimer();
+    };
+
+    const handleScrollEndDrag = () => {
+      isUserDragging.current = false;
+      scheduleNextSlide();
+    };
+
+    const handleScrollToIndexFailed = (info: { index: number }) => {
+      setTimeout(() => {
+        if (flatListRef.current) {
+          flatListRef.current.scrollToOffset({
+            offset: info.index * SCREEN_WIDTH,
+            animated: true,
+          });
+        }
+      }, 100);
+    };
+
+    const getItemLayout = useCallback(
+      (_: any, index: number) => ({
+        length: SCREEN_WIDTH,
+        offset: SCREEN_WIDTH * index,
+        index,
+      }),
+      []
+    );
+
+    const renderBannerItem = useCallback(
+      ({ item }: { item: string }) => <BannerSlideItem item={item} />,
+      []
+    );
+
+    return (
+      <View style={styles.carouselContainer}>
+        {totalBanners > 0 ? (
+          <FlatList
+            ref={flatListRef}
+            data={banners}
+            horizontal
+            pagingEnabled
+            snapToInterval={SCREEN_WIDTH}
+            snapToAlignment="center"
+            decelerationRate="fast"
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            directionalLockEnabled
+            disableIntervalMomentum
+            keyExtractor={(_, index) => `banner-slide-${index}`}
+            renderItem={renderBannerItem}
+            getItemLayout={getItemLayout}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            onScrollBeginDrag={handleScrollBeginDrag}
+            onScrollEndDrag={handleScrollEndDrag}
+            onMomentumScrollEnd={handleScrollEndDrag}
+            onScrollToIndexFailed={handleScrollToIndexFailed}
+          />
+        ) : (
+          <View style={styles.placeholderBannerContainer}>
+            <LinearGradient
+              colors={['#0F172A', '#1E293B', '#0F172A']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.placeholderBannerAvatar} />
+            ) : (
+              <View style={styles.placeholderBannerIconCircle}>
+                <Ionicons name="storefront-outline" size={42} color="#22CC71" />
+              </View>
+            )}
+            <Text style={styles.placeholderBannerText}>{shopName}</Text>
+          </View>
+        )}
+
+        {/* Top Header Floating Overlay Actions */}
+        <View style={styles.bannerHeaderActions}>
+          <Pressable onPress={() => router.back()} style={styles.actionIconButton} hitSlop={8}>
+            <Ionicons name="arrow-back" size={20} color="#0D0D0D" />
+          </Pressable>
+
+          <View style={styles.bannerRightActions}>
+            <Pressable onPress={onToggleFavorite} style={styles.actionIconButton} hitSlop={8}>
+              <Ionicons
+                name={isFavorite ? 'heart' : 'heart-outline'}
+                size={20}
+                color={isFavorite ? '#EF4444' : '#0D0D0D'}
+              />
+            </Pressable>
+            <Pressable onPress={onShare} style={styles.actionIconButton} hitSlop={8}>
+              <Ionicons name="share-social-outline" size={19} color="#0D0D0D" />
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Animated Pagination Dots */}
+        {totalBanners > 1 && (
+          <View style={styles.paginationContainer}>
+            {banners.map((_, i) => {
+              const isActive = i === activeIndex;
+              return (
+                <View
+                  key={`dot-${i}`}
+                  style={[styles.paginationDot, isActive ? styles.paginationDotActive : styles.paginationDotInactive]}
+                />
+              );
+            })}
+          </View>
+        )}
+      </View>
+    );
+  }
+);
+
+// --- PRODUCT CARD COMPONENT ---
 function StaggeredProductCard({
   item,
   index,
@@ -400,8 +449,7 @@ function StaggeredProductCard({
   onAddToCart: (p: Product) => void;
 }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const translateYAnim = useRef(new Animated.Value(24)).current;
-  const pressScale = useRef(new Animated.Value(1)).current;
+  const translateYAnim = useRef(new Animated.Value(18)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
 
   const stockVal = item.stock != null ? Number(item.stock) : 0;
@@ -409,42 +457,24 @@ function StaggeredProductCard({
   const isLowStock = stockVal > 0 && stockVal <= 5;
 
   const showMRP = item.mrp && item.mrp > item.price;
-  const discountPercent = showMRP
-    ? Math.round(((item.mrp! - item.price) / item.mrp!) * 100)
-    : 0;
+  const discountPercent = showMRP ? Math.round(((item.mrp! - item.price) / item.mrp!) * 100) : 0;
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 350,
-        delay: Math.min(index * 60, 300),
+        duration: 300,
+        delay: Math.min(index * 40, 200),
         useNativeDriver: true,
       }),
       Animated.spring(translateYAnim, {
         toValue: 0,
-        delay: Math.min(index * 60, 300),
-        friction: 6,
-        tension: 40,
+        delay: Math.min(index * 40, 200),
+        friction: 7,
         useNativeDriver: true,
       }),
     ]).start();
   }, [fadeAnim, translateYAnim, index]);
-
-  const handlePressIn = () => {
-    Animated.spring(pressScale, {
-      toValue: 0.95,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(pressScale, {
-      toValue: 1,
-      friction: 4,
-      useNativeDriver: true,
-    }).start();
-  };
 
   const handleAddPress = () => {
     if (isOutOfStock || isStoreClosed) return;
@@ -452,8 +482,8 @@ function StaggeredProductCard({
       router.push('/cart');
     } else {
       Animated.sequence([
-        Animated.timing(buttonScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
-        Animated.spring(buttonScale, { toValue: 1, friction: 3, tension: 40, useNativeDriver: true }),
+        Animated.timing(buttonScale, { toValue: 0.92, duration: 80, useNativeDriver: true }),
+        Animated.spring(buttonScale, { toValue: 1, friction: 4, useNativeDriver: true }),
       ]).start();
       onAddToCart(item);
     }
@@ -467,13 +497,12 @@ function StaggeredProductCard({
         styles.card,
         {
           opacity: fadeAnim,
-          transform: [{ translateY: translateYAnim }, { scale: pressScale }],
+          transform: [{ translateY: translateYAnim }],
         },
       ]}
     >
       <Pressable
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
+        style={({ pressed }) => [styles.cardInnerPressable, pressed && { opacity: 0.92 }]}
         onPress={() =>
           router.push({
             pathname: '/product/[id]',
@@ -486,7 +515,14 @@ function StaggeredProductCard({
             <Image source={{ uri: item.image_url }} style={styles.productImage} resizeMode="cover" />
           ) : (
             <View style={styles.productImagePlaceholder}>
-              <Ionicons name="image-outline" size={32} color="#94A3B8" />
+              <Ionicons name="image-outline" size={32} color="#CBD5E1" />
+            </View>
+          )}
+
+          {/* Discount Tag */}
+          {showMRP && discountPercent > 0 && (
+            <View style={styles.discountBadge}>
+              <Text style={styles.discountText}>{discountPercent}% OFF</Text>
             </View>
           )}
 
@@ -501,33 +537,21 @@ function StaggeredProductCard({
                 : styles.stockBadgeIn,
             ]}
           >
-            <Ionicons
-              name={isOutOfStock ? 'close-circle' : isLowStock ? 'alert-circle' : 'checkmark-circle'}
-              size={10}
-              color={isOutOfStock ? '#EF4444' : isLowStock ? '#F97316' : '#22CC71'}
+            <View
+              style={[
+                styles.stockDot,
+                { backgroundColor: isOutOfStock ? '#EF4444' : isLowStock ? '#F97316' : '#22CC71' },
+              ]}
             />
             <Text
               style={[
                 styles.stockStatusText,
-                {
-                  color: isOutOfStock
-                    ? '#EF4444'
-                    : isLowStock
-                    ? '#F97316'
-                    : '#22CC71',
-                },
+                { color: isOutOfStock ? '#EF4444' : isLowStock ? '#C2410C' : '#15803D' },
               ]}
             >
               {isOutOfStock ? 'Out of Stock' : isLowStock ? `Only ${stockVal} left` : 'In Stock'}
             </Text>
           </View>
-
-          {/* Discount Tag */}
-          {showMRP && discountPercent > 0 && (
-            <View style={styles.discountBadge}>
-              <Text style={styles.discountText}>{discountPercent}% OFF</Text>
-            </View>
-          )}
         </View>
 
         <View style={styles.cardContent}>
@@ -565,7 +589,7 @@ function StaggeredProductCard({
                 : isOutOfStock
                 ? 'OUT OF STOCK'
                 : alreadyInCart
-                ? 'VIEW CART'
+                ? 'GO TO CART'
                 : 'ADD'}
             </Text>
           </Pressable>
@@ -590,26 +614,18 @@ export default function StoreScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState(getCart());
   const [loading, setLoading] = useState(true);
+  const [isFavorite, setIsFavorite] = useState(false);
 
-  // Screen Entrance Animations
-  const bannerTranslateY = useRef(new Animated.Value(-60)).current;
+  // Entrance animations
   const headerOpacity = useRef(new Animated.Value(0)).current;
-  const searchOpacity = useRef(new Animated.Value(0)).current;
-  const categoriesTranslateX = useRef(new Animated.Value(-40)).current;
-  const categoriesOpacity = useRef(new Animated.Value(0)).current;
   const productsListOpacity = useRef(new Animated.Value(1)).current;
-
-  // Search Focus Expansion Animations
-  const searchWidthAnim = useRef(new Animated.Value(1)).current;
-  const searchBorderColor = useRef(new Animated.Value(0)).current;
 
   // Floating Cart Animations
   const cartSlideAnim = useRef(new Animated.Value(120)).current;
   const cartBounceAnim = useRef(new Animated.Value(1)).current;
-
   const prevCartCount = useRef(cartItems.length);
 
-  // --- REALTIME SUPABASE SUBSCRIPTION ---
+  // --- REALTIME SUBSCRIPTION ---
   useEffect(() => {
     if (!vendorId) return;
 
@@ -656,6 +672,7 @@ export default function StoreScreen() {
     };
   }, [vendorId]);
 
+  // --- CART SUBSCRIPTION ---
   useEffect(() => {
     const unsubscribe = subscribeCart(() => {
       const newCart = getCart();
@@ -666,7 +683,7 @@ export default function StoreScreen() {
       if (prevCartCount.current === 0 && newCount > 0) {
         Animated.spring(cartSlideAnim, {
           toValue: 0,
-          friction: 6,
+          friction: 7,
           tension: 40,
           useNativeDriver: true,
         }).start();
@@ -680,7 +697,7 @@ export default function StoreScreen() {
 
       if (newCount > 0) {
         Animated.sequence([
-          Animated.spring(cartBounceAnim, { toValue: 1.08, useNativeDriver: true, speed: 20 }),
+          Animated.spring(cartBounceAnim, { toValue: 1.05, useNativeDriver: true, speed: 20 }),
           Animated.spring(cartBounceAnim, { toValue: 1, useNativeDriver: true, friction: 4 }),
         ]).start();
       }
@@ -714,44 +731,16 @@ export default function StoreScreen() {
         console.error('Error fetching store screen data:', err);
       } finally {
         setLoading(false);
-        triggerEntranceAnimations();
+        Animated.timing(headerOpacity, {
+          toValue: 1,
+          duration: 350,
+          useNativeDriver: true,
+        }).start();
       }
     }
 
     fetchData();
   }, [vendorId]);
-
-  const triggerEntranceAnimations = () => {
-    Animated.stagger(100, [
-      Animated.timing(bannerTranslateY, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.timing(headerOpacity, {
-        toValue: 1,
-        duration: 350,
-        useNativeDriver: true,
-      }),
-      Animated.timing(searchOpacity, {
-        toValue: 1,
-        duration: 350,
-        useNativeDriver: true,
-      }),
-      Animated.parallel([
-        Animated.timing(categoriesOpacity, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.spring(categoriesTranslateX, {
-          toValue: 0,
-          friction: 6,
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start();
-  };
 
   async function fetchBannersOnly() {
     const bannersRes = await supabase
@@ -770,10 +759,6 @@ export default function StoreScreen() {
 
     if (bannerList.length === 0 && vendorProfile?.banner_url) {
       bannerList.push(vendorProfile.banner_url);
-    }
-
-    if (bannerList.length === 0) {
-      bannerList.push('https://via.placeholder.com/800x400/0F172A/FFFFFF?text=Store');
     }
 
     bannerList.forEach((url) => Image.prefetch(url));
@@ -813,10 +798,6 @@ export default function StoreScreen() {
       bannerList.push(loadedProfile.banner_url);
     }
 
-    if (bannerList.length === 0) {
-      bannerList.push('https://via.placeholder.com/800x400/0F172A/FFFFFF?text=Store');
-    }
-
     bannerList.forEach((url) => Image.prefetch(url));
     setBanners(bannerList);
   }
@@ -843,23 +824,16 @@ export default function StoreScreen() {
   async function fetchCustomerAddress() {
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError || !authData?.user) {
-        console.error('User is not logged in or auth error occurred:', authError);
-        return;
-      }
+      if (authError || !authData?.user) return;
 
       const user = authData.user;
-
       const { data: customer, error: customerError } = await supabase
         .from('customers')
         .select('id')
         .eq('auth_user_id', user.id)
         .maybeSingle();
 
-      if (customerError || !customer) {
-        console.error('Customer record is missing or query failed:', customerError);
-        return;
-      }
+      if (customerError || !customer) return;
 
       const { data: addressData, error: addressError } = await supabase
         .from('customer_addresses')
@@ -868,22 +842,15 @@ export default function StoreScreen() {
         .eq('is_default', true)
         .maybeSingle();
 
-      if (addressError || !addressData) {
-        console.error('Default customer address is missing or query failed:', addressError);
-        return;
-      }
-
-      if (addressData.latitude == null || addressData.longitude == null) {
-        console.error('Customer address latitude or longitude is null:', addressData);
-        return;
-      }
+      if (addressError || !addressData) return;
+      if (addressData.latitude == null || addressData.longitude == null) return;
 
       setCustomerCoords({
         latitude: Number(addressData.latitude),
         longitude: Number(addressData.longitude),
       });
     } catch (err) {
-      console.error('Unexpected error in fetchCustomerAddress:', err);
+      console.error('Error fetching customer address:', err);
     }
   }
 
@@ -900,17 +867,10 @@ export default function StoreScreen() {
         Number(vendorProfile.latitude),
         Number(vendorProfile.longitude)
       );
-      return `${dist.toFixed(1)} km away`;
-    }
-    return 'Distance unavailable';
-  }, [customerCoords, vendorProfile]);
-
-  const deliveryRadiusText = useMemo(() => {
-    if (vendorProfile?.delivery_radius_km != null) {
-      return `${vendorProfile.delivery_radius_km} km radius`;
+      return `${dist.toFixed(1)} km`;
     }
     return null;
-  }, [vendorProfile]);
+  }, [customerCoords, vendorProfile]);
 
   const hoursDisplay = useMemo(() => {
     return getBusinessHoursDisplay(vendorProfile);
@@ -928,7 +888,7 @@ export default function StoreScreen() {
     if (vendorProfile?.preparation_time_minutes != null) {
       return `${vendorProfile.preparation_time_minutes} mins`;
     }
-    return 'Time unavailable';
+    return '15-25 mins';
   }, [vendorProfile]);
 
   const activeCategories = useMemo(() => {
@@ -949,31 +909,28 @@ export default function StoreScreen() {
 
   const handleCategorySelect = (catId: string | null) => {
     Animated.timing(productsListOpacity, {
-      toValue: 0.2,
+      toValue: 0.3,
       duration: 100,
       useNativeDriver: true,
     }).start(() => {
       setSelectedCategory(catId);
       Animated.timing(productsListOpacity, {
         toValue: 1,
-        duration: 200,
+        duration: 180,
         useNativeDriver: true,
       }).start();
     });
   };
 
-  const handleSearchFocus = () => {
-    Animated.parallel([
-      Animated.spring(searchWidthAnim, { toValue: 1.02, useNativeDriver: true }),
-      Animated.timing(searchBorderColor, { toValue: 1, duration: 200, useNativeDriver: false }),
-    ]).start();
-  };
-
-  const handleSearchBlur = () => {
-    Animated.parallel([
-      Animated.spring(searchWidthAnim, { toValue: 1, useNativeDriver: true }),
-      Animated.timing(searchBorderColor, { toValue: 0, duration: 200, useNativeDriver: false }),
-    ]).start();
+  const handleShare = async () => {
+    try {
+      const name = vendorProfile?.vendors?.shop_name || 'Store';
+      await Share.share({
+        message: `Check out ${name} on Rivo!`,
+      });
+    } catch {
+      // Ignored
+    }
   };
 
   const totalCartQuantity = useMemo(() => {
@@ -994,11 +951,6 @@ export default function StoreScreen() {
     return <StoreSkeleton />;
   }
 
-  const interpolatedBorderColor = searchBorderColor.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#E2E8F0', '#22CC71'],
-  });
-
   return (
     <View style={styles.container}>
       <Animated.FlatList
@@ -1012,41 +964,57 @@ export default function StoreScreen() {
         style={{ opacity: productsListOpacity }}
         ListHeaderComponent={
           <View style={styles.topSectionContainer}>
-            {/* HERO BANNER VERTICAL SLIDESHOW */}
-            <Animated.View style={{ transform: [{ translateY: bannerTranslateY }] }}>
-              <VerticalBannerSlideshow banners={banners} />
-            </Animated.View>
+            {/* HERO BANNER CAROUSEL */}
+            <BannerCarousel
+              banners={banners}
+              shopName={shopName}
+              avatarUrl={vendorProfile?.avatar_url}
+              isFavorite={isFavorite}
+              onToggleFavorite={() => setIsFavorite(!isFavorite)}
+              onShare={handleShare}
+            />
 
-            {/* STORE HEADER */}
+            {/* FLOATING GLASS STORE INFO CARD */}
             <Animated.View style={[styles.profileCard, { opacity: headerOpacity }]}>
-              <View style={styles.avatarRow}>
-                {vendorProfile?.avatar_url ? (
-                  <Image source={{ uri: vendorProfile.avatar_url }} style={styles.avatar} />
-                ) : (
-                  <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                    <Text style={styles.avatarText}>{shopName.charAt(0).toUpperCase()}</Text>
-                  </View>
-                )}
+              <View style={styles.cardHeaderRow}>
+                <View style={styles.avatarWrapper}>
+                  {vendorProfile?.avatar_url ? (
+                    <Image source={{ uri: vendorProfile.avatar_url }} style={styles.avatar} />
+                  ) : (
+                    <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                      <Text style={styles.avatarText}>{shopName.charAt(0).toUpperCase()}</Text>
+                    </View>
+                  )}
+                </View>
 
-                <View style={[styles.statusBadge, { backgroundColor: hoursDisplay.color + '1A' }]}>
+                {/* Status Badge */}
+                <View style={[styles.statusBadge, { backgroundColor: hoursDisplay.bgColor }]}>
+                  <View style={[styles.statusDot, { backgroundColor: hoursDisplay.color }]} />
                   <Text style={[styles.statusBadgeText, { color: hoursDisplay.color }]}>
                     {hoursDisplay.statusBadge}
                   </Text>
                 </View>
               </View>
 
-              <Text style={styles.storeName}>{shopName}</Text>
+              <View style={styles.storeNameRow}>
+                <Text style={styles.storeName} numberOfLines={1}>
+                  {shopName}
+                </Text>
+                <Ionicons name="checkmark-circle" size={18} color="#22CC71" style={styles.verifiedBadge} />
+              </View>
 
               {vendorProfile?.tagline ? (
-                <Text style={styles.storeTagline}>{vendorProfile.tagline}</Text>
+                <Text style={styles.storeTagline} numberOfLines={1}>
+                  {vendorProfile.tagline}
+                </Text>
               ) : null}
 
               {/* STORE CLOSED BANNER */}
               {isStoreClosed && (
                 <View style={styles.closedWarningBanner}>
-                  <Ionicons name="information-circle" size={16} color="#EF4444" />
+                  <Ionicons name="information-circle" size={15} color="#EF4444" />
                   <Text style={styles.closedWarningText}>
-                    Store is currently closed. Orders cannot be placed at this time.
+                    Store is closed. Orders are currently unavailable.
                   </Text>
                 </View>
               )}
@@ -1054,57 +1022,49 @@ export default function StoreScreen() {
               {/* STORE BUSY BANNER */}
               {isStoreBusy && (
                 <View style={styles.busyWarningBanner}>
-                  <Ionicons name="alert-circle" size={16} color="#F97316" />
+                  <Ionicons name="alert-circle" size={15} color="#F97316" />
                   <Text style={styles.busyWarningText}>
-                    Store is experiencing high order volume. Deliveries might take longer.
+                    High order volume. Deliveries may take slightly longer.
                   </Text>
                 </View>
               )}
 
-              {/* DETAILED BUSINESS HOURS AND METRICS */}
-              <View style={styles.metricsPillsGrid}>
-                <View style={[styles.businessHoursPill, { borderColor: hoursDisplay.color + '33' }]}>
-                  <Ionicons name="time-outline" size={16} color={hoursDisplay.color} />
-                  <View style={{ flexShrink: 1 }}>
-                    <Text style={styles.businessHoursDay}>Today's Hours</Text>
-                    <Text style={styles.businessHoursTime}>{hoursDisplay.timeLabel}</Text>
-                  </View>
+              <View style={styles.cardDivider} />
+
+              {/* METRICS ROW */}
+              <View style={styles.metricsContainer}>
+                <View style={styles.metricItem}>
+                  <Ionicons name="star" size={14} color="#F59E0B" />
+                  <Text style={styles.metricItemText}>4.8</Text>
                 </View>
 
-                <View style={styles.metricPill}>
-                  <Ionicons name="location-outline" size={14} color="#22CC71" />
-                  <Text style={styles.metricPillText}>{distanceText}</Text>
+                <View style={styles.metricDotSeparator} />
+
+                <View style={styles.metricItem}>
+                  <Ionicons name="time-outline" size={14} color="#64748B" />
+                  <Text style={styles.metricItemText}>{prepTimeText}</Text>
                 </View>
 
-                <View style={styles.metricPill}>
-                  <Ionicons name="flash-outline" size={14} color="#22CC71" />
-                  <Text style={styles.metricPillText}>{prepTimeText}</Text>
-                </View>
-
-                {vendorProfile?.minimum_order != null && (
-                  <View style={styles.metricPill}>
-                    <MaterialCommunityIcons name="shopping-outline" size={14} color="#22CC71" />
-                    <Text style={styles.metricPillText}>Min order ₹{vendorProfile.minimum_order}</Text>
-                  </View>
+                {distanceText && (
+                  <>
+                    <View style={styles.metricDotSeparator} />
+                    <View style={styles.metricItem}>
+                      <Ionicons name="location-outline" size={14} color="#64748B" />
+                      <Text style={styles.metricItemText}>{distanceText}</Text>
+                    </View>
+                  </>
                 )}
+              </View>
 
-                {deliveryRadiusText && (
-                  <View style={styles.metricPill}>
-                    <Ionicons name="bicycle-outline" size={14} color="#22CC71" />
-                    <Text style={styles.metricPillText}>{deliveryRadiusText}</Text>
-                  </View>
-                )}
+              <View style={styles.todayTimingsRow}>
+                <Ionicons name="calendar-outline" size={13} color="#94A3B8" />
+                <Text style={styles.todayTimingsText}>Today: {hoursDisplay.timeLabel}</Text>
               </View>
             </Animated.View>
 
-            {/* SEARCH BAR */}
-            <Animated.View
-              style={[
-                styles.searchContainer,
-                { opacity: searchOpacity, transform: [{ scale: searchWidthAnim }] },
-              ]}
-            >
-              <Animated.View style={[styles.searchInner, { borderColor: interpolatedBorderColor }]}>
+            {/* STICKY/ROUNDED SEARCH BAR */}
+            <View style={styles.searchContainer}>
+              <View style={styles.searchInner}>
                 <Ionicons name="search" size={18} color="#94A3B8" />
                 <TextInput
                   style={styles.searchInput}
@@ -1112,25 +1072,18 @@ export default function StoreScreen() {
                   placeholderTextColor="#94A3B8"
                   value={searchQuery}
                   onChangeText={setSearchQuery}
-                  onFocus={handleSearchFocus}
-                  onBlur={handleSearchBlur}
                 />
                 {searchQuery.length > 0 && (
-                  <Pressable onPress={() => setSearchQuery('')}>
+                  <Pressable onPress={() => setSearchQuery('')} hitSlop={6}>
                     <Ionicons name="close-circle" size={18} color="#94A3B8" />
                   </Pressable>
                 )}
-              </Animated.View>
-            </Animated.View>
+              </View>
+            </View>
 
             {/* CATEGORY CHIPS */}
             {activeCategories.length > 0 && (
-              <Animated.View
-                style={{
-                  opacity: categoriesOpacity,
-                  transform: [{ translateX: categoriesTranslateX }],
-                }}
-              >
+              <View>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -1138,7 +1091,11 @@ export default function StoreScreen() {
                 >
                   <Pressable
                     onPress={() => handleCategorySelect(null)}
-                    style={[styles.chip, selectedCategory === null && styles.chipSelected]}
+                    style={({ pressed }) => [
+                      styles.chip,
+                      selectedCategory === null ? styles.chipSelected : styles.chipInactive,
+                      pressed && styles.chipPressed,
+                    ]}
                   >
                     <Text style={[styles.chipText, selectedCategory === null && styles.chipTextSelected]}>
                       All Items
@@ -1151,7 +1108,11 @@ export default function StoreScreen() {
                       <Pressable
                         key={cat.id}
                         onPress={() => handleCategorySelect(cat.id)}
-                        style={[styles.chip, isSelected && styles.chipSelected]}
+                        style={({ pressed }) => [
+                          styles.chip,
+                          isSelected ? styles.chipSelected : styles.chipInactive,
+                          pressed && styles.chipPressed,
+                        ]}
                       >
                         <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
                           {cat.name}
@@ -1160,18 +1121,18 @@ export default function StoreScreen() {
                     );
                   })}
                 </ScrollView>
-              </Animated.View>
+              </View>
             )}
           </View>
         }
         ListEmptyComponent={
           <View style={styles.emptyStateContainer}>
             <View style={styles.emptyIconCircle}>
-              <Ionicons name="basket-outline" size={48} color="#94A3B8" />
+              <Ionicons name="basket-outline" size={44} color="#94A3B8" />
             </View>
-            <Text style={styles.emptyTitle}>No products available</Text>
+            <Text style={styles.emptyTitle}>No items found</Text>
             <Text style={styles.emptySubText}>
-              This store hasn't added any products matching your criteria yet.
+              Try searching for something else or pick another category.
             </Text>
           </View>
         }
@@ -1189,7 +1150,7 @@ export default function StoreScreen() {
         }}
       />
 
-      {/* FLOATING CART SUMMARY */}
+      {/* FLOATING CART BAR */}
       {cartItems.length > 0 && (
         <Animated.View
           style={[
@@ -1206,11 +1167,15 @@ export default function StoreScreen() {
               }
             }}
             disabled={isStoreClosed}
-            style={[styles.floatingCartButton, isStoreClosed && styles.floatingCartDisabled]}
+            style={({ pressed }) => [
+              styles.floatingCartButton,
+              isStoreClosed && styles.floatingCartDisabled,
+              pressed && { opacity: 0.92 },
+            ]}
           >
             <View style={styles.floatingCartLeft}>
               <View style={styles.cartIconWrapper}>
-                <Ionicons name="cart" size={20} color={isStoreClosed ? '#94A3B8' : '#22CC71'} />
+                <Ionicons name="bag" size={18} color={isStoreClosed ? '#94A3B8' : '#22CC71'} />
                 <View style={styles.cartCountBadge}>
                   <Text style={styles.cartCountText}>{totalCartQuantity}</Text>
                 </View>
@@ -1218,7 +1183,7 @@ export default function StoreScreen() {
               <View>
                 <Text style={styles.cartPriceText}>₹{totalCartPrice}</Text>
                 <Text style={styles.cartSubText}>
-                  {isStoreClosed ? 'Checkout disabled while closed' : 'Extra charges may apply'}
+                  {isStoreClosed ? 'Closed for ordering' : 'View cart & checkout'}
                 </Text>
               </View>
             </View>
@@ -1238,31 +1203,24 @@ export default function StoreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAFAFA',
   },
   topSectionContainer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAFAFA',
     marginBottom: 8,
   },
 
-  // Carousel Container & Slides
+  // Carousel Container
   carouselContainer: {
-    width: '100%',
-    height: BANNER_HEIGHT,
-    position: 'relative',
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    overflow: 'hidden',
-    backgroundColor: '#0F172A',
-  },
-  bannerSlideAbsolute: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
     width: SCREEN_WIDTH,
     height: BANNER_HEIGHT,
+    position: 'relative',
+    backgroundColor: '#0F172A',
+  },
+  bannerItemContainer: {
+    width: SCREEN_WIDTH,
+    height: BANNER_HEIGHT,
+    position: 'relative',
   },
   bannerImage: {
     width: '100%',
@@ -1270,51 +1228,119 @@ const styles = StyleSheet.create({
   },
   bannerGradientOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
   },
-  backButton: {
+  placeholderBannerContainer: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 10,
+  },
+  placeholderBannerAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: '#FFFFFF33',
+    marginBottom: 10,
+  },
+  placeholderBannerIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  placeholderBannerText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+
+  // Header Actions
+  bannerHeaderActions: {
     position: 'absolute',
     top: 44,
     left: 16,
+    right: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  bannerRightActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionIconButton: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFFFFEE',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.12,
     shadowRadius: 4,
-    elevation: 4,
-    zIndex: 10,
+    elevation: 3,
   },
 
-  // Store Profile
+  // Pagination
+  paginationContainer: {
+    position: 'absolute',
+    bottom: 28,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+  },
+  paginationDot: {
+    height: 6,
+    borderRadius: 3,
+  },
+  paginationDotActive: {
+    width: 18,
+    backgroundColor: '#22CC71',
+  },
+  paginationDotInactive: {
+    width: 6,
+    backgroundColor: '#FFFFFF80',
+  },
+
+  // Profile Glass Card
   profileCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
+    borderRadius: 20,
     marginHorizontal: 16,
-    marginTop: -32,
+    marginTop: -20,
     padding: 16,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 4,
     borderWidth: 1,
     borderColor: '#F1F5F9',
   },
-  avatarRow: {
+  cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+  avatarWrapper: {
+    marginTop: -28,
+  },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#F7F8FA',
+    width: 58,
+    height: 58,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
     borderWidth: 3,
     borderColor: '#FFFFFF',
   },
@@ -1326,23 +1352,38 @@ const styles = StyleSheet.create({
   avatarText: {
     color: '#FFF',
     fontSize: 22,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 12,
+    borderRadius: 20,
+    gap: 5,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   statusBadgeText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
+  },
+  storeNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
   },
   storeName: {
-    fontSize: 21,
-    fontWeight: '900',
+    fontSize: 19,
+    fontWeight: '800',
     color: '#0D0D0D',
-    marginTop: 10,
     letterSpacing: -0.3,
+  },
+  verifiedBadge: {
+    marginLeft: 6,
   },
   storeTagline: {
     fontSize: 13,
@@ -1350,87 +1391,77 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 2,
   },
-
-  // Banners for Availability State
   closedWarningBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
+    gap: 6,
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
     marginTop: 10,
   },
   closedWarningText: {
     color: '#991B1B',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     flex: 1,
   },
   busyWarningBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFEDD5',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
+    gap: 6,
+    backgroundColor: '#FFF7ED',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
     marginTop: 10,
   },
   busyWarningText: {
     color: '#9A3412',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     flex: 1,
   },
-
-  // Metrics Pills Grid
-  metricsPillsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 14,
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 12,
   },
-  businessHoursPill: {
+  metricsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    gap: 8,
-    borderWidth: 1,
-    width: '100%',
   },
-  businessHoursDay: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#0D0D0D',
-  },
-  businessHoursTime: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  metricPill: {
+  metricItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    gap: 5,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+    gap: 4,
   },
-  metricPillText: {
-    fontSize: 11,
+  metricItemText: {
+    fontSize: 13,
     fontWeight: '700',
     color: '#334155',
   },
+  metricDotSeparator: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#CBD5E1',
+    marginHorizontal: 10,
+  },
+  todayTimingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  todayTimingsText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
 
-  // Search
+  // Search Container
   searchContainer: {
     paddingHorizontal: 16,
     marginTop: 14,
@@ -1439,12 +1470,17 @@ const styles = StyleSheet.create({
   searchInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     paddingHorizontal: 12,
     height: 44,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   searchInput: {
     flex: 1,
@@ -1454,7 +1490,7 @@ const styles = StyleSheet.create({
     color: '#0D0D0D',
   },
 
-  // Categories
+  // Category Chips
   categoriesList: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -1463,22 +1499,28 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   chipSelected: {
     backgroundColor: '#22CC71',
     borderColor: '#22CC71',
   },
+  chipInactive: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E2E8F0',
+  },
+  chipPressed: {
+    opacity: 0.8,
+  },
   chipText: {
     color: '#475569',
-    fontWeight: '700',
-    fontSize: 12,
+    fontWeight: '600',
+    fontSize: 13,
   },
   chipTextSelected: {
     color: '#FFFFFF',
+    fontWeight: '700',
   },
 
   // Products Grid
@@ -1492,17 +1534,20 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    marginBottom: 16,
+    marginBottom: 14,
     width: CARD_WIDTH,
     borderWidth: 1,
     borderColor: '#F1F5F9',
     justifyContent: 'space-between',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
     elevation: 2,
     overflow: 'hidden',
+  },
+  cardInnerPressable: {
+    width: '100%',
   },
   imageContainer: {
     width: '100%',
@@ -1526,28 +1571,33 @@ const styles = StyleSheet.create({
     left: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 6,
+  },
+  stockDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   stockBadgeIn: {
     backgroundColor: '#E8FBF0',
   },
   stockBadgeLow: {
-    backgroundColor: '#FFF3E0',
+    backgroundColor: '#FFEDD5',
   },
   stockBadgeOut: {
     backgroundColor: '#FEE2E2',
   },
   stockStatusText: {
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   discountBadge: {
     position: 'absolute',
     top: 6,
-    right: 6,
+    left: 6,
     backgroundColor: '#22CC71',
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -1563,7 +1613,7 @@ const styles = StyleSheet.create({
   },
   productName: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#0D0D0D',
     lineHeight: 17,
     minHeight: 34,
@@ -1576,14 +1626,14 @@ const styles = StyleSheet.create({
   },
   productPrice: {
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: '800',
     color: '#0D0D0D',
   },
   productMRP: {
     fontSize: 11,
     color: '#94A3B8',
     textDecorationLine: 'line-through',
-    fontWeight: '600',
+    fontWeight: '500',
   },
   actionRow: {
     paddingHorizontal: 10,
@@ -1606,40 +1656,40 @@ const styles = StyleSheet.create({
   },
   outOfStockBtn: {
     backgroundColor: '#F1F5F9',
-    borderColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
   },
   outOfStockBtnText: {
     color: '#94A3B8',
   },
   alreadyInCartBtn: {
-    backgroundColor: '#E8FBF0',
+    backgroundColor: '#22CC71',
     borderColor: '#22CC71',
   },
   alreadyInCartBtnText: {
-    color: '#22CC71',
+    color: '#FFFFFF',
   },
 
-  // Floating Cart
+  // Floating Cart Bar
   floatingCartContainer: {
     position: 'absolute',
     bottom: 20,
     left: 16,
     right: 16,
     shadowColor: '#22CC71',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
     elevation: 8,
   },
   floatingCartButton: {
     backgroundColor: '#22CC71',
     borderRadius: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    height: 56,
+    height: 54,
   },
   floatingCartDisabled: {
     backgroundColor: '#94A3B8',
@@ -1650,8 +1700,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cartIconWrapper: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
@@ -1662,7 +1712,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0D0D0D',
     borderRadius: 8,
     minWidth: 16,
     height: 16,
@@ -1673,12 +1723,12 @@ const styles = StyleSheet.create({
   cartCountText: {
     color: '#FFFFFF',
     fontSize: 9,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   cartPriceText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   cartSubText: {
     color: '#E8FBF0',
@@ -1693,7 +1743,7 @@ const styles = StyleSheet.create({
   viewCartText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   // Empty State
@@ -1704,10 +1754,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#F8FAFC',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -1725,15 +1775,16 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Skeleton
+  // Skeleton Loaders
   skeletonBanner: {
     width: '100%',
     height: BANNER_HEIGHT,
   },
   skeletonAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 58,
+    height: 58,
+    borderRadius: 16,
+    marginTop: -20,
   },
   skeletonBadge: {
     width: 60,
@@ -1754,8 +1805,8 @@ const styles = StyleSheet.create({
   },
   skeletonMetrics: {
     width: '100%',
-    height: 32,
-    borderRadius: 8,
+    height: 24,
+    borderRadius: 6,
     marginTop: 12,
   },
   skeletonGrid: {

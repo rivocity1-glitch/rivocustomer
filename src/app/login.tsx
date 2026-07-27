@@ -147,11 +147,12 @@ export default function LoginScreen() {
 
     try {
       const { error } = await supabase.auth.signInWithOtp({
-        email: cleanEmail,
-        options: {
-          shouldCreateUser: true,
-        },
-      });
+  email: cleanEmail,
+  options: {
+    shouldCreateUser: true,
+    emailRedirectTo: undefined,
+  },
+});
 
       if (error) throw error;
 
