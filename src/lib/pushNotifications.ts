@@ -1,119 +1,126 @@
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-
 import { supabase } from './supabase';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// Safely lazy-load expo-notifications to prevent Expo Go / SDK 53+ module evaluation crashes
+let Notifications: typeof import('expo-notifications') | null = null;
+try {
+  Notifications = require('expo-notifications');
 
-export async function registerForPushNotifications() {
+  // Configure handler only if Notifications module successfully loads
+  Notifications?.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+} catch (e) {
+  console.warn('[PushToken] expo-notifications could not be initialized natively (e.g., running in Expo Go).');
+}
+
+/**
+ * Generates an Expo Push Token and updates the customer record in Supabase
+ */
+export async function saveCustomerPushToken(authUserId: string): Promise<string | null> {
+  console.log('[PushToken] Starting registration for Auth User ID:', authUserId);
+
+  if (!Notifications) {
+    console.warn('[PushToken] Notifications module not available in this environment. Skipping.');
+    return null;
+  }
+
+  // 1. Ensure code runs on a physical device
+  if (!Device.isDevice) {
+    console.warn('[PushToken] Must use a physical device for push notifications. Skipping.');
+    return null;
+  }
+
   try {
-    console.log('Starting push notification registration...');
-
-    if (!Device.isDevice) {
-      console.log('Push notifications require a physical device.');
-      return null;
-    }
-
+    // 2. Set Android Notification Channel
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'Default',
+        name: 'Default Notifications',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#208AEF',
+        lightColor: '#22CC71',
       });
+      console.log('[PushToken] Android Notification Channel "default" initialized.');
     }
 
-    const { status: existingStatus } =
-      await Notifications.getPermissionsAsync();
-
+    // 3. Permissions Check & Request
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
 
+    console.log('[PushToken] Initial Permission Status:', existingStatus);
+
     if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
+      const { status } = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+        },
+      });
       finalStatus = status;
+      console.log('[PushToken] Updated Permission Status:', finalStatus);
     }
 
     if (finalStatus !== 'granted') {
-      console.log('Notification permission denied.');
+      console.warn('[PushToken] Push notification permission denied by user.');
       return null;
     }
 
+    // 4. Resolve Project ID for EAS / Development Builds
     const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ??
-      Constants.easConfig?.projectId;
+      Constants?.expoConfig?.extra?.eas?.projectId ??
+      Constants?.easConfig?.projectId;
 
-    console.log('Project ID:', projectId);
+    console.log('[PushToken] Resolved EAS Project ID:', projectId);
 
-    if (!projectId) {
-      console.log('Missing EAS Project ID.');
+    // 5. Generate Expo Push Token
+    const pushTokenData = await Notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined
+    );
+
+    const token = pushTokenData?.data;
+    console.log('[PushToken] Generated Expo Push Token:', token);
+
+    if (!token) {
+      console.error('[PushToken] Received empty token from Expo.');
       return null;
     }
 
-    const pushToken = (
-      await Notifications.getExpoPushTokenAsync({
-        projectId,
-      })
-    ).data;
+    // 6. Update Customer Record in Supabase
+    const { data: updateData, error: updateError } = await supabase
+      .from('customers')
+      .update({ expo_push_token: token })
+      .eq('auth_user_id', authUserId)
+      .select();
 
-    console.log('Expo Push Token:', pushToken);
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      console.log('No authenticated user.');
-      return pushToken;
+    if (updateError) {
+      console.error('[PushToken] Supabase Update Error:', updateError);
+      return null;
     }
 
-    console.log('Authenticated User:', user.id);
+    console.log('[PushToken] Supabase Update Result:', updateData);
 
-    const { error } = await supabase
-      .from('customers')
-      .update({
-        expo_push_token: pushToken,
-      })
-      .eq('auth_user_id', user.id);
-
-    if (error) {
-      console.log('Database update failed:', error.message);
+    if (!updateData || updateData.length === 0) {
+      console.warn(
+        '[PushToken] No customer record matched auth_user_id:',
+        authUserId,
+        '. Token not persisted.'
+      );
     } else {
-      console.log('Push token saved successfully.');
+      console.log('[PushToken] Token successfully saved to database!');
     }
 
-    return pushToken;
-  } catch (error) {
-    console.error('Push registration failed:', error);
+    return token;
+  } catch (err) {
+    console.error('[PushToken] Exception occurred during registration:', err);
     return null;
-  }
-}
-
-export async function clearPushToken() {
-  try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) return;
-
-    await supabase
-      .from('customers')
-      .update({
-        expo_push_token: null,
-      })
-      .eq('auth_user_id', user.id);
-
-    console.log('Push token cleared.');
-  } catch (error) {
-    console.error(error);
   }
 }

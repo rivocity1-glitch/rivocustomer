@@ -63,7 +63,7 @@ export default function InvoiceScreen() {
       setOrder(orderData);
 
       if (orderData) {
-        // Step 4: Using order.vendor_id fetch vendor information from vendor_profiles safely using existing records
+        // Step 4: Using order.vendor_id fetch vendor information from vendor_profiles safely
         if (orderData.vendor_id) {
           const { data: profileData } = await supabase
             .from('vendor_profiles')
@@ -96,22 +96,51 @@ export default function InvoiceScreen() {
         if (itemsErr) throw itemsErr;
 
         if (itemsData && itemsData.length > 0) {
-          // Step 7: For every order item, query products using product_id to obtain product.name
+          // Step 7: For every order item, resolve product details & name with robust fallbacks
           const resolvedItems = await Promise.all(
             itemsData.map(async (item) => {
+              let fetchedProductName = null;
+              let fetchedHsn = null;
+              let fetchedGst = null;
+
               if (item.product_id) {
-                const { data: productData } = await supabase
-                  .from('products')
-                  .select('name')
-                  .eq('id', item.product_id)
-                  .maybeSingle();
-                
-                return {
-                  ...item,
-                  product_name: productData?.name || null,
-                };
+                try {
+                  const { data: productData } = await supabase
+                    .from('products')
+                    .select('*')
+                    .eq('id', item.product_id)
+                    .maybeSingle();
+                  
+                  if (productData) {
+                    fetchedProductName =
+                      productData.name ||
+                      productData.title ||
+                      productData.product_name ||
+                      null;
+                    fetchedHsn = productData.hsn_code || productData.hsn || null;
+                    fetchedGst = productData.gst_rate ?? productData.gst ?? null;
+                  }
+                } catch {
+                  // Fallback to item stored fields if products query is restricted or fails
+                }
               }
-              return { ...item, product_name: null };
+
+              // Comprehensive fallback logic for product name
+              const resolvedName =
+                fetchedProductName ||
+                item.product_name ||
+                item.item_name ||
+                item.product_title ||
+                item.name ||
+                item.title ||
+                'Unknown Product';
+
+              return {
+                ...item,
+                product_name: resolvedName,
+                hsn_code: fetchedHsn || item.hsn_code || item.hsn || null,
+                gst_rate: fetchedGst ?? item.gst_rate ?? item.gst ?? 0,
+              };
             })
           );
           setItemsWithProducts(resolvedItems);
@@ -133,7 +162,7 @@ export default function InvoiceScreen() {
   const formatDate = (dateString: string | null) => {
     if (!dateString) return null;
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
+      return new Date(dateString).toLocaleDateString('en-IN', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
@@ -144,18 +173,34 @@ export default function InvoiceScreen() {
   };
 
   const formatAmount = (value: any) => {
-    if (value === undefined || value === null) return null;
+    if (value === undefined || value === null) return '₹0.00';
     const num = Number(value);
-    return isNaN(num) ? null : num.toFixed(2);
+    return isNaN(num) ? '₹0.00' : `₹${num.toFixed(2)}`;
   };
 
-  // Safe evaluation of vendor data strictly from what exists in vendor_profiles
+  const formatText = (text: string | null | undefined) => {
+    if (!text) return null;
+    const lower = text.toLowerCase().trim();
+    if (lower === 'cod') return 'Cash on Delivery';
+    if (lower === 'paid') return 'Paid';
+    if (lower === 'pending') return 'Pending';
+    if (lower === 'failed') return 'Failed';
+
+    return text
+      .split(' ')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  // Safe evaluation of vendor data
   const shopName = vendorProfile?.shop_name || vendorProfile?.name || null;
   const ownerName = vendorProfile?.owner_name || vendorProfile?.contact_name || null;
   const shopAddress = vendorProfile?.address || vendorProfile?.shop_address || vendorProfile?.location || null;
   const shopPhone = vendorProfile?.phone || vendorProfile?.phone_number || vendorProfile?.contact_phone || null;
+  const shopGstin = vendorProfile?.gstin || vendorProfile?.gst_number || vendorProfile?.gst_no || null;
+  const shopEmail = vendorProfile?.email || vendorProfile?.business_email || null;
 
-  // Safe evaluation of address properties strictly from what exists in customer_addresses
+  // Safe evaluation of address properties
   const customerName = address?.name || address?.customer_name || null;
   const customerPhone = address?.phone || address?.phone_number || null;
   const addressLine1 = address?.address_line1 || address?.address || null;
@@ -164,26 +209,73 @@ export default function InvoiceScreen() {
   const city = address?.city || null;
   const state = address?.state || null;
   const pincode = address?.postal_code || address?.pincode || address?.zip_code || null;
+  const customerGstin = address?.gstin || address?.gst_number || order?.customer_gstin || null;
 
-  // Safe calculations for dynamic fields based on structural prices without fallback placeholders
-  const subtotal = order?.subtotal ? Number(order.subtotal) : 0;
-  const deliveryFee = order?.delivery_fee ? Number(order.delivery_fee) : 0;
-  const totalAmount = order?.total_amount ? Number(order.total_amount) : 0;
-  
-  // Platform fee computed purely from existing math if discrepancy matches positive balance
-  const calculatedPlatformFee = totalAmount > 0 ? (totalAmount - (subtotal + deliveryFee)) : 0;
-  const platformFeeDisplay = calculatedPlatformFee > 0 ? calculatedPlatformFee.toFixed(2) : null;
-  
-  // Safe evaluation of missing fields (discount / platform_fee fields if structural columns appear)
-  const orderDiscount = order?.discount ? Number(order.discount) : null;
-  const platformFeeField = order?.platform_fee ? Number(order.platform_fee) : null;
-  const finalPlatformFee = platformFeeField !== null ? formatAmount(platformFeeField) : platformFeeDisplay;
-  const finalDiscount = orderDiscount !== null ? formatAmount(orderDiscount) : null;
+  const fullAddress = [addressLine1, addressLine2, landmark, city, state, pincode].filter(Boolean).join(', ');
+
+  // Per-item & Total GST calculations
+  let totalTaxableAmount = 0;
+  let totalGstAmount = 0;
+  let totalProductInclusiveAmount = 0;
+  let hasAnyGst = false;
+
+  const processedItems = itemsWithProducts.map((item) => {
+    const qty = Number(item.quantity ?? 1);
+    const unitPrice = Number(item.unit_price ?? 0);
+    const inclusivePrice = item.total_price !== undefined && item.total_price !== null 
+      ? Number(item.total_price) 
+      : unitPrice * qty;
+    const gstRate = Number(item.gst_rate ?? 0);
+
+    let taxableAmount = inclusivePrice;
+    let gstAmount = 0;
+    let cgst = 0;
+    let sgst = 0;
+
+    if (gstRate > 0) {
+      hasAnyGst = true;
+      taxableAmount = inclusivePrice / (1 + gstRate / 100);
+      gstAmount = inclusivePrice - taxableAmount;
+      cgst = gstAmount / 2;
+      sgst = gstAmount / 2;
+    }
+
+    totalTaxableAmount += taxableAmount;
+    totalGstAmount += gstAmount;
+    totalProductInclusiveAmount += inclusivePrice;
+
+    return {
+      ...item,
+      qty,
+      unitPrice,
+      inclusivePrice,
+      gstRate,
+      taxableAmount,
+      gstAmount,
+      cgst,
+      sgst,
+    };
+  });
+
+  const totalCgst = totalGstAmount / 2;
+  const totalSgst = totalGstAmount / 2;
+
+  // Discounts and Additional Charges
+  const couponDiscountVal = order?.coupon_discount ? Number(order.coupon_discount) : 0;
+  const offerDiscountVal = order?.offer_discount ? Number(order.offer_discount) : 0;
+  const genericDiscountVal = order?.discount ? Number(order.discount) : 0;
+
+  const deliveryFeeVal = order?.delivery_fee !== undefined && order?.delivery_fee !== null ? Number(order.delivery_fee) : null;
+  const platformFeeVal = order?.platform_fee !== undefined && order?.platform_fee !== null ? Number(order.platform_fee) : null;
+  const grandTotalVal = order?.total_amount !== undefined && order?.total_amount !== null ? Number(order.total_amount) : null;
+
+  const calculatedSavings = couponDiscountVal + offerDiscountVal + genericDiscountVal;
+  const hasSavings = calculatedSavings > 0;
 
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="small" color="#000000" />
+        <ActivityIndicator size="small" color="#0F172A" />
       </View>
     );
   }
@@ -214,16 +306,16 @@ export default function InvoiceScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         
-        {/* TOP BRAND HEADER CARD */}
+        {/* INVOICE HEADER */}
         <View style={styles.headerCard}>
           <View style={styles.headerRow}>
             <View>
-              <Text style={styles.brandText}>RIVO</Text>
-              <Text style={styles.invoiceTitle}>Tax Invoice</Text>
+              <Text style={styles.brandText}>Rivo City</Text>
+              <Text style={styles.invoiceTitle}>Marketplace Tax Invoice</Text>
             </View>
             {invoice.status && (
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>{invoice.status.toUpperCase()}</Text>
+                <Text style={styles.badgeText}>{formatText(invoice.status)?.toUpperCase()}</Text>
               </View>
             )}
           </View>
@@ -235,22 +327,22 @@ export default function InvoiceScreen() {
                 <Text style={styles.metaValue}>{invoice.invoice_number}</Text>
               </View>
             )}
-            {formatDate(invoice.created_at) && (
-              <View style={styles.metaColumn}>
-                <Text style={styles.metaLabel}>Invoice Date</Text>
-                <Text style={styles.metaValue}>{formatDate(invoice.created_at)}</Text>
-              </View>
-            )}
             {order?.order_number && (
               <View style={styles.metaColumn}>
                 <Text style={styles.metaLabel}>Order Number</Text>
                 <Text style={styles.metaValue}>{order.order_number}</Text>
               </View>
             )}
+            {formatDate(invoice.created_at) && (
+              <View style={styles.metaColumn}>
+                <Text style={styles.metaLabel}>Invoice Date</Text>
+                <Text style={styles.metaValue}>{formatDate(invoice.created_at)}</Text>
+              </View>
+            )}
             {order?.order_status && (
               <View style={styles.metaColumn}>
                 <Text style={styles.metaLabel}>Order Status</Text>
-                <Text style={styles.metaValue}>{order.order_status}</Text>
+                <Text style={styles.metaValue}>{formatText(order.order_status)}</Text>
               </View>
             )}
           </View>
@@ -258,31 +350,30 @@ export default function InvoiceScreen() {
 
         {/* VENDOR & CUSTOMER SECTION */}
         <View style={styles.addressSectionGrid}>
-          {/* Vendor Details */}
-          {(shopName || ownerName || shopAddress || shopPhone) && (
-            <View style={styles.addressCard}>
+          {/* Sold By */}
+          {(shopName || ownerName || shopAddress || shopPhone || shopGstin || shopEmail) && (
+            <View style={styles.card}>
               <Text style={styles.sectionHeading}>Sold By</Text>
               {shopName && <Text style={styles.storeNameText}>{shopName}</Text>}
               {ownerName && <Text style={styles.addressDetailText}>{ownerName}</Text>}
               {shopAddress && <Text style={styles.addressDetailText}>{shopAddress}</Text>}
               {shopPhone && <Text style={styles.addressDetailText}>Phone: {shopPhone}</Text>}
+              {shopGstin && <Text style={styles.addressDetailText}>GSTIN: {shopGstin}</Text>}
+              {shopEmail && <Text style={styles.addressDetailText}>Email: {shopEmail}</Text>}
             </View>
           )}
 
-          {/* Customer Details */}
-          <View style={styles.addressCard}>
+          {/* Bill To */}
+          <View style={styles.card}>
             <Text style={styles.sectionHeading}>Bill To</Text>
             {customerName && <Text style={styles.storeNameText}>{customerName}</Text>}
             {customerPhone && <Text style={styles.addressDetailText}>Phone: {customerPhone}</Text>}
-            {(addressLine1 || addressLine2 || landmark || city || state || pincode) && (
-              <Text style={styles.addressDetailText}>
-                {[addressLine1, addressLine2, landmark, city, state, pincode].filter(Boolean).join(', ')}
-              </Text>
-            )}
+            {fullAddress ? <Text style={styles.addressDetailText}>{fullAddress}</Text> : null}
+            {customerGstin && <Text style={styles.addressDetailText}>GSTIN: {customerGstin}</Text>}
           </View>
         </View>
 
-        {/* ORDER INFORMATION TIMELINE */}
+        {/* ORDER INFORMATION */}
         <View style={styles.card}>
           <Text style={styles.sectionHeading}>Order Information</Text>
           <View style={styles.infoGrid}>
@@ -304,6 +395,24 @@ export default function InvoiceScreen() {
                 <Text style={styles.infoValue}>{formatDate(order.delivered_at)}</Text>
               </View>
             )}
+            {order?.payment_method && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Payment Method</Text>
+                <Text style={styles.infoValue}>{formatText(order.payment_method)}</Text>
+              </View>
+            )}
+            {order?.payment_status && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Payment Status</Text>
+                <Text style={styles.infoValue}>{formatText(order.payment_status)}</Text>
+              </View>
+            )}
+            {invoice?.status && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Invoice Status</Text>
+                <Text style={styles.infoValue}>{formatText(invoice.status)}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -311,84 +420,152 @@ export default function InvoiceScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionHeading}>Items</Text>
           <View style={styles.tableHeader}>
-            <Text style={[styles.th, { flex: 2.5 }]}>Product</Text>
+            <Text style={[styles.th, { flex: 2.2 }]}>Product</Text>
             <Text style={[styles.th, { flex: 0.6, textAlign: 'center' }]}>Qty</Text>
-            <Text style={[styles.th, { flex: 1.2, textAlign: 'right' }]}>Price</Text>
-            <Text style={[styles.th, { flex: 1.2, textAlign: 'right' }]}>Total</Text>
+            <Text style={[styles.th, { flex: 1.1, textAlign: 'right' }]}>Unit Price</Text>
+            <Text style={[styles.th, { flex: 1.1, textAlign: 'right' }]}>Total</Text>
           </View>
 
-          {itemsWithProducts.map((item, idx) => (
+          {processedItems.map((item, idx) => (
             <View key={item.id || idx} style={styles.tableRow}>
-              <Text style={[styles.td, { flex: 2.5, fontWeight: '500', color: '#111111' }]}>
-                {item.product_name || 'Product Item'}
+              <View style={{ flex: 2.2, paddingRight: 6 }}>
+                <Text style={styles.productName}>{item.product_name}</Text>
+                {item.hsn_code ? (
+                  <Text style={styles.itemSubDetail}>HSN: {item.hsn_code}</Text>
+                ) : null}
+                
+                {item.gstRate > 0 ? (
+                  <>
+                    <Text style={styles.itemGstBreakdownText}>
+                      GST Included ({item.gstRate}%)
+                    </Text>
+                    <Text style={styles.itemGstBreakdownText}>
+                      Taxable Value {formatAmount(item.taxableAmount)}
+                    </Text>
+                    <Text style={styles.itemGstBreakdownText}>
+                      GST {formatAmount(item.gstAmount)}
+                    </Text>
+                    <Text style={styles.itemGstBreakdownText}>
+                      CGST {formatAmount(item.cgst)} | SGST {formatAmount(item.sgst)}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.itemGstBreakdownText}>GST Exempt</Text>
+                )}
+              </View>
+              <Text style={[styles.td, { flex: 0.6, textAlign: 'center', color: '#475569' }]}>
+                {item.qty}
               </Text>
-              <Text style={[styles.td, { flex: 0.6, textAlign: 'center', color: '#666666' }]}>
-                {item.quantity ?? 1}
+              <Text style={[styles.td, { flex: 1.1, textAlign: 'right', color: '#475569' }]}>
+                {formatAmount(item.unitPrice)}
               </Text>
-              <Text style={[styles.td, { flex: 1.2, textAlign: 'right', color: '#444444' }]}>
-                {formatAmount(item.unit_price) || '0.00'}
-              </Text>
-              <Text style={[styles.td, { flex: 1.2, textAlign: 'right', fontWeight: '600', color: '#111111' }]}>
-                {formatAmount(item.total_price) || '0.00'}
+              <Text style={[styles.td, { flex: 1.1, textAlign: 'right', fontWeight: '600', color: '#0F172A' }]}>
+                {formatAmount(item.inclusivePrice)}
               </Text>
             </View>
           ))}
 
           {/* SUMMARY INLINE */}
           <View style={styles.summaryContainer}>
-            {formatAmount(order?.subtotal) && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Product Total (Inclusive GST)</Text>
+              <Text style={styles.summaryValue}>{formatAmount(totalProductInclusiveAmount)}</Text>
+            </View>
+
+            {hasAnyGst && (
+              <>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Less GST Included</Text>
+                  <Text style={styles.summaryValue}>{formatAmount(totalGstAmount)}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Taxable Value</Text>
+                  <Text style={styles.summaryValue}>{formatAmount(totalTaxableAmount)}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>CGST</Text>
+                  <Text style={styles.summaryValue}>{formatAmount(totalCgst)}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>SGST</Text>
+                  <Text style={styles.summaryValue}>{formatAmount(totalSgst)}</Text>
+                </View>
+              </>
+            )}
+
+            {couponDiscountVal > 0 && (
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Subtotal</Text>
-                <Text style={styles.summaryValue}>{formatAmount(order.subtotal)}</Text>
+                <Text style={styles.summaryLabel}>Coupon Discount</Text>
+                <Text style={[styles.summaryValue, styles.discountText]}>-{formatAmount(couponDiscountVal)}</Text>
               </View>
             )}
-            {formatAmount(order?.delivery_fee) && (
+            {offerDiscountVal > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Offer Discount</Text>
+                <Text style={[styles.summaryValue, styles.discountText]}>-{formatAmount(offerDiscountVal)}</Text>
+              </View>
+            )}
+            {deliveryFeeVal !== null && (
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Delivery Fee</Text>
-                <Text style={styles.summaryValue}>{formatAmount(order.delivery_fee)}</Text>
+                <Text style={styles.summaryValue}>{formatAmount(deliveryFeeVal)}</Text>
               </View>
             )}
-            {finalPlatformFee && (
+            {platformFeeVal !== null && (
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Platform Fee</Text>
-                <Text style={styles.summaryValue}>{finalPlatformFee}</Text>
+                <Text style={styles.summaryValue}>{formatAmount(platformFeeVal)}</Text>
               </View>
             )}
-            {finalDiscount && (
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Discount</Text>
-                <Text style={[styles.summaryValue, { color: '#10b981' }]}>-{finalDiscount}</Text>
-              </View>
-            )}
-            {formatAmount(order?.total_amount) && (
-              <View style={[styles.summaryRow, styles.grandTotalRow]}>
-                <Text style={styles.grandTotalLabel}>Grand Total</Text>
-                <Text style={styles.grandTotalValue}>{formatAmount(order.total_amount)}</Text>
+            
+            <View style={styles.divider} />
+
+            {grandTotalVal !== null && (
+              <View style={styles.grandTotalHighlight}>
+                <Text style={styles.grandTotalLabel}>Amount Payable</Text>
+                <Text style={styles.grandTotalValue}>{formatAmount(grandTotalVal)}</Text>
               </View>
             )}
           </View>
         </View>
 
-        {/* PAYMENT METADATA CARD */}
+        {/* SAVINGS CARD */}
+        {hasSavings && (
+          <View style={styles.savingsCard}>
+            <Text style={styles.savingsTitle}>You Saved</Text>
+            {couponDiscountVal > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.savingsLabel}>Coupon Discount</Text>
+                <Text style={styles.savingsValue}>{formatAmount(couponDiscountVal)}</Text>
+              </View>
+            )}
+            {offerDiscountVal > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.savingsLabel}>Offer Discount</Text>
+                <Text style={styles.savingsValue}>{formatAmount(offerDiscountVal)}</Text>
+              </View>
+            )}
+            <View style={styles.savingsTotalRow}>
+              <Text style={styles.savingsTotalLabel}>Total Savings</Text>
+              <Text style={styles.savingsTotalValue}>{formatAmount(calculatedSavings)}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* PAYMENT DETAILS */}
         <View style={styles.card}>
           <Text style={styles.sectionHeading}>Payment Details</Text>
           <View style={styles.infoGrid}>
             {order?.payment_method && (
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Payment Method</Text>
-                <Text style={styles.infoValue}>{order.payment_method}</Text>
+                <Text style={styles.infoValue}>{formatText(order.payment_method)}</Text>
               </View>
             )}
             {order?.payment_status && (
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Payment Status</Text>
-                <Text style={styles.infoValue}>{order.payment_status}</Text>
-              </View>
-            )}
-            {invoice.status && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Invoice Status</Text>
-                <Text style={styles.infoValue}>{invoice.status}</Text>
+                <Text style={styles.infoValue}>{formatText(order.payment_status)}</Text>
               </View>
             )}
           </View>
@@ -396,9 +573,19 @@ export default function InvoiceScreen() {
 
         {/* FOOTER */}
         <View style={styles.footerContainer}>
-          <Text style={styles.footerTextBold}>Thank you for choosing Rivo.</Text>
-          <Text style={styles.footerText}>For support contact your vendor through the Rivo app.</Text>
-          <Text style={styles.footerTextLight}>This is a computer generated invoice.</Text>
+          <Text style={styles.footerHeading}>Thank you for shopping with Rivo City.</Text>
+          <Text style={styles.footerText}>
+            This invoice is generated by Rivo City Marketplace on behalf of the selling vendor.
+          </Text>
+          <Text style={styles.footerText}>
+            Prices are inclusive of applicable GST unless otherwise stated.
+          </Text>
+          <Text style={styles.footerText}>
+            For support, contact the selling vendor through the Rivo City app.
+          </Text>
+          <Text style={styles.footerNote}>
+            This is a computer-generated tax invoice and does not require a signature.
+          </Text>
         </View>
 
       </ScrollView>
@@ -409,67 +596,64 @@ export default function InvoiceScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#FFFFFF',
   },
   container: {
     padding: 16,
+    backgroundColor: '#FFFFFF',
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFFFF',
     padding: 20,
   },
   headerCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#e9ecef',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
+    borderColor: '#E2E8F0',
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   brandText: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#000000',
-    letterSpacing: 1.5,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.5,
   },
   invoiceTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#6c757d',
-    textTransform: 'uppercase',
+    color: '#64748B',
     marginTop: 2,
-    letterSpacing: 0.5,
   },
   badge: {
-    backgroundColor: '#e6f4ea',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
   },
   badgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#137333',
+    color: '#334155',
     letterSpacing: 0.5,
   },
   headerMetaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginHorizontal: -8,
+    marginTop: 8,
   },
   metaColumn: {
     width: '50%',
@@ -478,7 +662,8 @@ const styles = StyleSheet.create({
   },
   metaLabel: {
     fontSize: 11,
-    color: '#868e96',
+    fontWeight: '500',
+    color: '#64748B',
     marginBottom: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
@@ -486,52 +671,44 @@ const styles = StyleSheet.create({
   metaValue: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#212529',
+    color: '#0F172A',
   },
   addressSectionGrid: {
-    marginBottom: 4,
-  },
-  addressCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
+    marginBottom: 0,
   },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: '#E2E8F0',
   },
   sectionHeading: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#495057',
+    color: '#475569',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f3f5',
+    borderBottomColor: '#F1F5F9',
     paddingBottom: 6,
   },
   storeNameText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#111111',
+    color: '#0F172A',
     marginBottom: 4,
   },
   addressDetailText: {
     fontSize: 13,
-    color: '#495057',
+    color: '#475569',
     lineHeight: 18,
     marginTop: 2,
   },
   infoGrid: {
-    marginTop: 4,
+    marginTop: 2,
   },
   infoRow: {
     flexDirection: 'row',
@@ -540,41 +717,56 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: 13,
-    color: '#6c757d',
+    color: '#64748B',
   },
   infoValue: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#212529',
+    color: '#0F172A',
   },
   tableHeader: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#dee2e6',
+    borderBottomColor: '#E2E8F0',
     paddingBottom: 8,
     marginBottom: 8,
   },
   th: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#868e96',
+    color: '#64748B',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#f8f9fa',
-    alignItems: 'center',
+    borderBottomColor: '#F8FAFC',
+    alignItems: 'flex-start',
   },
   td: {
     fontSize: 13,
   },
+  productName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  itemSubDetail: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  itemGstBreakdownText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
   summaryContainer: {
     marginTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e9ecef',
+    borderTopColor: '#E2E8F0',
     paddingTop: 12,
   },
   summaryRow: {
@@ -584,74 +776,131 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 13,
-    color: '#495057',
+    color: '#475569',
   },
   summaryValue: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#212529',
+    color: '#0F172A',
   },
-  grandTotalRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#dee2e6',
-    marginTop: 10,
-    paddingTop: 10,
+  discountText: {
+    color: '#16A34A',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 8,
+  },
+  grandTotalHighlight: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   grandTotalLabel: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#000000',
+    color: '#0F172A',
   },
   grandTotalValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#000000',
+    color: '#0F172A',
+  },
+  savingsCard: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  savingsTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#166534',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  savingsLabel: {
+    fontSize: 13,
+    color: '#15803D',
+  },
+  savingsValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#15803D',
+  },
+  savingsTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: '#DCFCE7',
+    marginTop: 8,
+    paddingTop: 8,
+  },
+  savingsTotalLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  savingsTotalValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#166534',
   },
   footerContainer: {
     alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 40,
-    paddingHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 32,
+    paddingHorizontal: 16,
   },
-  footerTextBold: {
+  footerHeading: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#495057',
+    color: '#334155',
     marginBottom: 4,
+    textAlign: 'center',
   },
   footerText: {
     fontSize: 12,
-    color: '#6c757d',
+    color: '#64748B',
     textAlign: 'center',
-    lineHeight: 16,
-    marginBottom: 6,
+    lineHeight: 18,
   },
-  footerTextLight: {
+  footerNote: {
     fontSize: 11,
-    color: '#adb5bd',
+    color: '#94A3B8',
     fontStyle: 'italic',
+    marginTop: 8,
+    textAlign: 'center',
   },
   errorText: {
-    fontSize: 15,
-    color: '#dc3545',
+    fontSize: 14,
+    color: '#EF4444',
     textAlign: 'center',
     marginBottom: 16,
   },
   infoText: {
-    fontSize: 15,
-    color: '#6c757d',
+    fontSize: 14,
+    color: '#64748B',
     textAlign: 'center',
     marginBottom: 16,
   },
   primaryButton: {
-    backgroundColor: '#000000',
+    backgroundColor: '#0F172A',
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 6,
+    borderRadius: 8,
   },
   primaryButtonText: {
-    color: '#ffffff',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
