@@ -1,4 +1,3 @@
-// src/app/store/[id].tsx
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -629,8 +628,22 @@ export default function StoreScreen() {
   useEffect(() => {
     if (!vendorId) return;
 
-    const profileChannel = supabase
-      .channel(`customer-vendor-profile-${vendorId}`)
+    let profileChannel: ReturnType<typeof supabase.channel> | null = null;
+    let bannerChannel: ReturnType<typeof supabase.channel> | null = null;
+
+    const profileChannelName = `customer-vendor-profile-${vendorId}`;
+    const bannerChannelName = `customer-vendor-banners-${vendorId}`;
+
+    // 1. Remove existing profile channel if any
+    const existingChannels = supabase.getChannels();
+    const existingProfileChannel = existingChannels.find((ch) => ch.topic === `realtime:${profileChannelName}`);
+    if (existingProfileChannel) {
+      supabase.removeChannel(existingProfileChannel);
+    }
+
+    // 2. Create fresh profile channel & attach listeners BEFORE subscribe()
+    profileChannel = supabase
+      .channel(profileChannelName)
       .on(
         'postgres_changes',
         {
@@ -647,11 +660,19 @@ export default function StoreScreen() {
             }));
           }
         }
-      )
-      .subscribe();
+      );
 
-    const bannerChannel = supabase
-      .channel(`customer-vendor-banners-${vendorId}`)
+    profileChannel.subscribe();
+
+    // 1. Remove existing banner channel if any
+    const existingBannerChannel = existingChannels.find((ch) => ch.topic === `realtime:${bannerChannelName}`);
+    if (existingBannerChannel) {
+      supabase.removeChannel(existingBannerChannel);
+    }
+
+    // 2. Create fresh banner channel & attach listeners BEFORE subscribe()
+    bannerChannel = supabase
+      .channel(bannerChannelName)
       .on(
         'postgres_changes',
         {
@@ -663,12 +684,13 @@ export default function StoreScreen() {
         () => {
           fetchBannersOnly();
         }
-      )
-      .subscribe();
+      );
+
+    bannerChannel.subscribe();
 
     return () => {
-      supabase.removeChannel(profileChannel);
-      supabase.removeChannel(bannerChannel);
+      if (profileChannel) supabase.removeChannel(profileChannel);
+      if (bannerChannel) supabase.removeChannel(bannerChannel);
     };
   }, [vendorId]);
 

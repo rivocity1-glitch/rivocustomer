@@ -675,6 +675,7 @@ export default function CheckoutScreen() {
           quantity: item.quantity,
           unit_price: item.price,
           total_price: item.price * item.quantity,
+          gst_rate: item.gst_rate ?? 0,
         });
       }
 

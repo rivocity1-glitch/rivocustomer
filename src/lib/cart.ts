@@ -12,6 +12,8 @@ export interface CartItem {
   category_id?: string | null;
   description?: string | null;
   quantity: number;
+  gst_rate?: number | null;
+  gst_slab?: string | null;
 }
 
 export let cart: CartItem[] = [];
@@ -136,6 +138,8 @@ export function addToCart(product: any) {
       category_id: product.category_id || null,
       description: product.description || null,
       quantity: 1,
+      gst_rate: product.gst_rate != null ? Number(product.gst_rate) : 0,
+      gst_slab: product.gst_slab || null,
     });
   }
 

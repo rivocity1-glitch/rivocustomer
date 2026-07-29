@@ -66,12 +66,18 @@ export default function HomeScreen() {
 
       const channelName = `home-notification-badge-${user.id}`;
 
-      // Clean up previous channel instance if it exists
+      // 1. Remove any existing channel with the same topic
+      const existingChannels = supabase.getChannels();
+      const existingChannel = existingChannels.find((ch) => ch.topic === `realtime:${channelName}`);
+      if (existingChannel) {
+        supabase.removeChannel(existingChannel);
+      }
+
       if (channel) {
         supabase.removeChannel(channel);
       }
 
-      // Attach all listeners BEFORE calling .subscribe()
+      // 2. Create fresh channel & attach listeners BEFORE subscribe()
       channel = supabase
         .channel(channelName)
         .on(
