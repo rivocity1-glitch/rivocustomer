@@ -1,6 +1,6 @@
 import { Platform, StyleSheet, Text, type TextProps } from 'react-native';
 
-import { Fonts, ThemeColor } from '@/constants/theme';
+import { ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export type ThemedTextProps = TextProps & {
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
     color: '#3c87f7',
   },
   code: {
-    fontFamily: Fonts.mono,
+    fontFamily: Platform.OS === "android" ? "monospace" : "Courier",
     fontWeight: Platform.select({ android: 700 }) ?? 500,
     fontSize: 12,
   },
