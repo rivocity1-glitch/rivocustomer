@@ -1,20 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  FlatList,
   Image,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { getUnreadCustomerNotificationCount } from '../services/notificationService';
@@ -24,7 +21,6 @@ interface Vendor {
   shop_name: string;
   avatar_url?: string | null;
   status: string;
-  banner_images: string[];
 }
 
 interface Category {
@@ -37,142 +33,6 @@ interface Product {
   vendor_id: string;
   category_id: string;
   status: string;
-}
-
-function VendorCard({ vendor, getInitials }: { vendor: Vendor; getInitials: (name?: string) => string }) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const flatListRef = useRef<FlatList>(null);
-  const activeIndexRef = useRef(activeIndex);
-  activeIndexRef.current = activeIndex;
-
-  // Prefetch banner images
-  useEffect(() => {
-    if (vendor.banner_images && vendor.banner_images.length > 0) {
-      vendor.banner_images.forEach((url) => {
-        Image.prefetch(url).catch(() => {});
-      });
-    }
-  }, [vendor.banner_images]);
-
-  // Autoplay effect for multiple banners
-  useEffect(() => {
-    if (!vendor.banner_images || vendor.banner_images.length <= 1) return;
-
-    const interval = setInterval(() => {
-      const nextIndex = (activeIndexRef.current + 1) % vendor.banner_images.length;
-      setActiveIndex(nextIndex);
-      try {
-        flatListRef.current?.scrollToIndex({
-          index: nextIndex,
-          animated: true,
-        });
-      } catch {
-        setTimeout(() => {
-          flatListRef.current?.scrollToOffset({
-            offset: nextIndex * 84,
-            animated: true,
-          });
-        }, 100);
-      }
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [vendor.banner_images]);
-
-  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const contentOffsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(contentOffsetX / 84);
-    if (!isNaN(index) && index >= 0 && index < (vendor.banner_images?.length || 0)) {
-      setActiveIndex(index);
-    }
-  };
-
-  const getItemLayout = (_: any, index: number) => ({
-    length: 84,
-    offset: 84 * index,
-    index,
-  });
-
-  const handleScrollToIndexFailed = (info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
-    setTimeout(() => {
-      flatListRef.current?.scrollToOffset({
-        offset: info.index * 84,
-        animated: true,
-      });
-    }, 100);
-  };
-
-  return (
-    <Pressable
-      onPress={() => router.push(`/store/${vendor.id}` as any)}
-      style={({ pressed }) => [styles.storeCard, pressed && styles.pressedCard]}
-    >
-      <View style={styles.storeCardAccent} />
-      {vendor.banner_images && vendor.banner_images.length > 0 ? (
-        <View style={styles.avatarContainer}>
-          {vendor.banner_images.length === 1 ? (
-            <Image source={{ uri: vendor.banner_images[0] }} style={styles.storeAvatar} />
-          ) : (
-            <View style={styles.slideshowWrapper}>
-              <FlatList
-                ref={flatListRef}
-                data={vendor.banner_images}
-                horizontal
-                pagingEnabled
-                snapToInterval={84}
-                 decelerationRate="fast"
-                showsHorizontalScrollIndicator={false}
-                onScroll={handleScroll}
-                scrollEventThrottle={16}
-                getItemLayout={getItemLayout}
-                onScrollToIndexFailed={handleScrollToIndexFailed}
-                keyExtractor={(item, index) => `${vendor.id}-banner-${index}`}
-               renderItem={({ item }) => (
-  <View
-    style={{
-      width: 84,
-      height: 84,
-      justifyContent: "center",
-      alignItems: "center",
-    }}
-  >
-    <Image
-      source={{ uri: item }}
-      style={styles.storeAvatar}
-    />
-  </View>
-)}
-              />
-              <View style={styles.paginationDots}>
-                {vendor.banner_images.map((_, i) => (
-                  <View
-                    key={`${vendor.id}-dot-${i}`}
-                    style={[
-                      styles.dot,
-                      activeIndex === i ? styles.activeDot : styles.inactiveDot,
-                    ]}
-                  />
-                ))}
-              </View>
-            </View>
-          )}
-        </View>
-      ) : vendor.avatar_url ? (
-        <View style={styles.avatarContainer}>
-          <Image source={{ uri: vendor.avatar_url }} style={styles.storeAvatar} />
-        </View>
-      ) : (
-        <View style={styles.avatarPlaceholder}>
-          <Text style={styles.avatarPlaceholderText}>{getInitials(vendor.shop_name)}</Text>
-        </View>
-      )}
-      <View style={styles.storeInfoWrapper}>
-        <Text style={styles.storeNameText} numberOfLines={2}>
-          {vendor.shop_name}
-        </Text>
-      </View>
-    </Pressable>
-  );
 }
 
 export default function HomeScreen() {
@@ -294,29 +154,16 @@ export default function HomeScreen() {
           // 3. Fetch approved vendors
           const { data: vendorData } = await supabase
             .from('vendors')
-            .select(`
-  *,
-  vendor_profiles(avatar_url),
-  vendor_profile_banners(
-    banner_url,
-    banner_order,
-    is_active
-  )
-`)
+            .select('*, vendor_profiles(avatar_url)')
             .eq('status', 'approved');
 
           if (isMounted && vendorData) {
             const parsedVendors = vendorData.map((v: any) => ({
-  ...v,
-  avatar_url: Array.isArray(v.vendor_profiles)
-    ? v.vendor_profiles[0]?.avatar_url
-    : v.vendor_profiles?.avatar_url || null,
-
-  banner_images: (v.vendor_profile_banners || [])
-    .filter((b: any) => b.is_active)
-    .sort((a: any, b: any) => a.banner_order - b.banner_order)
-    .map((b: any) => b.banner_url),
-}));
+              ...v,
+              avatar_url: Array.isArray(v.vendor_profiles)
+                ? v.vendor_profiles[0]?.avatar_url
+                : v.vendor_profiles?.avatar_url || null,
+            }));
             setVendors(parsedVendors);
           }
 
@@ -566,7 +413,27 @@ export default function HomeScreen() {
           ) : (
             <View style={styles.storesGrid}>
               {filteredVendors.map((vendor) => (
-                <VendorCard key={vendor.id} vendor={vendor} getInitials={getInitials} />
+                <Pressable
+                  key={vendor.id}
+                  onPress={() => router.push(`/store/${vendor.id}` as any)}
+                  style={({ pressed }) => [styles.storeCard, pressed && styles.pressedCard]}
+                >
+                  <View style={styles.storeCardAccent} />
+                  {vendor.avatar_url ? (
+                    <View style={styles.avatarContainer}>
+                      <Image source={{ uri: vendor.avatar_url }} style={styles.storeAvatar} />
+                    </View>
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarPlaceholderText}>{getInitials(vendor.shop_name)}</Text>
+                    </View>
+                  )}
+                  <View style={styles.storeInfoWrapper}>
+                    <Text style={styles.storeNameText} numberOfLines={2}>
+                      {vendor.shop_name}
+                    </Text>
+                  </View>
+                </Pressable>
               ))}
             </View>
           )}
@@ -848,17 +715,6 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
     marginBottom: 12,
-    width: 84,
-    height: 84,
-    borderRadius: 28,
-    overflow: 'hidden',
-  },
-  slideshowWrapper: {
-    width: 84,
-    height: 84,
-    borderRadius: 28,
-    overflow: 'hidden',
-    position: 'relative',
   },
   storeAvatar: {
     width: 84,
@@ -867,28 +723,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderWidth: 2,
     borderColor: '#FFFFFF',
-  },
-  paginationDots: {
-    position: 'absolute',
-    bottom: 4,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 3,
-  },
-  dot: {
-    height: 4,
-    borderRadius: 2,
-  },
-  activeDot: {
-    width: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  inactiveDot: {
-    width: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
   },
   avatarPlaceholder: {
     width: 84,
