@@ -70,34 +70,54 @@ const CARD_WIDTH = (SCREEN_WIDTH - 40) / 2;
 const BANNER_HEIGHT = 240;
 
 // --- HAVERSINE DISTANCE HELPER ---
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+function calculateDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
+
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
   return R * c;
 }
 
 // --- BUSINESS HOURS HELPER ---
-function parseTimeString(timeStr?: string): { hours: number; minutes: number } | null {
+function parseTimeString(
+  timeStr?: string
+): { hours: number; minutes: number } | null {
   if (!timeStr) return null;
+
   const parts = timeStr.split(':');
+
   if (parts.length < 2) return null;
-  return { hours: parseInt(parts[0], 10), minutes: parseInt(parts[1], 10) };
+
+  return {
+    hours: parseInt(parts[0], 10),
+    minutes: parseInt(parts[1], 10),
+  };
 }
 
 function format12Hour(timeStr?: string): string {
   const parsed = parseTimeString(timeStr);
+
   if (!parsed) return '';
+
   const period = parsed.hours >= 12 ? 'PM' : 'AM';
   const hours12 = parsed.hours % 12 || 12;
-  const minsStr = parsed.minutes < 10 ? `0${parsed.minutes}` : `${parsed.minutes}`;
+  const minsStr =
+    parsed.minutes < 10 ? `0${parsed.minutes}` : `${parsed.minutes}`;
+
   return `${hours12}:${minsStr} ${period}`;
 }
 
@@ -107,18 +127,31 @@ function getBusinessHoursDisplay(profile: VendorProfile | null) {
   const manualOverride = !!profile?.manual_override;
 
   let parsedHours: BusinessHoursJSON | null = null;
+
   if (rawHours) {
     try {
-      parsedHours = typeof rawHours === 'string' ? JSON.parse(rawHours) : rawHours;
+      parsedHours =
+        typeof rawHours === 'string' ? JSON.parse(rawHours) : rawHours;
     } catch {
       parsedHours = null;
     }
   }
 
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const days = [
+    'sunday',
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+  ];
+
   const now = new Date();
   const currentDayName = days[now.getDay()];
-  const todaySchedule = parsedHours ? parsedHours[currentDayName] : null;
+  const todaySchedule = parsedHours
+    ? parsedHours[currentDayName]
+    : null;
 
   let timeLabel = 'Hours unavailable';
   let isClosingSoon = false;
@@ -127,13 +160,23 @@ function getBusinessHoursDisplay(profile: VendorProfile | null) {
     if (todaySchedule.closed) {
       timeLabel = 'Closed All Day';
     } else if (todaySchedule.open && todaySchedule.close) {
-      timeLabel = `${format12Hour(todaySchedule.open)} - ${format12Hour(todaySchedule.close)}`;
+      timeLabel = `${format12Hour(todaySchedule.open)} - ${format12Hour(
+        todaySchedule.close
+      )}`;
 
       const closeTime = parseTimeString(todaySchedule.close);
+
       if (closeTime) {
-        const currentMins = now.getHours() * 60 + now.getMinutes();
-        const closeMins = closeTime.hours * 60 + closeTime.minutes;
-        if (closeMins - currentMins > 0 && closeMins - currentMins <= 45) {
+        const currentMins =
+          now.getHours() * 60 + now.getMinutes();
+
+        const closeMins =
+          closeTime.hours * 60 + closeTime.minutes;
+
+        if (
+          closeMins - currentMins > 0 &&
+          closeMins - currentMins <= 45
+        ) {
           isClosingSoon = true;
         }
       }
@@ -201,7 +244,9 @@ function ShimmerView({ style }: { style: any }) {
         useNativeDriver: true,
       })
     );
+
     loop.start();
+
     return () => loop.stop();
   }, [shimmerAnim]);
 
@@ -210,18 +255,35 @@ function ShimmerView({ style }: { style: any }) {
     outputRange: [0.3, 0.7, 0.3],
   });
 
-  return <Animated.View style={[style, { opacity, backgroundColor: '#E2E8F0' }]} />;
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity,
+          backgroundColor: '#E2E8F0',
+        },
+      ]}
+    />
+  );
 }
 
 function StoreSkeleton() {
   return (
     <View style={styles.container}>
       <ShimmerView style={styles.skeletonBanner} />
+
       <View style={styles.profileCard}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+          }}
+        >
           <ShimmerView style={styles.skeletonAvatar} />
           <ShimmerView style={styles.skeletonBadge} />
         </View>
+
         <ShimmerView style={styles.skeletonTitle} />
         <ShimmerView style={styles.skeletonSubTitle} />
         <ShimmerView style={styles.skeletonMetrics} />
@@ -229,7 +291,10 @@ function StoreSkeleton() {
 
       <View style={styles.skeletonGrid}>
         {[1, 2, 3, 4].map((key) => (
-          <ShimmerView key={key} style={styles.skeletonCard} />
+          <ShimmerView
+            key={key}
+            style={styles.skeletonCard}
+          />
         ))}
       </View>
     </View>
@@ -237,24 +302,37 @@ function StoreSkeleton() {
 }
 
 // --- BANNER ITEM MEMOIZED ---
-const BannerSlideItem = React.memo(({ item }: { item: string }) => {
-  useEffect(() => {
-    if (item) Image.prefetch(item);
-  }, [item]);
+const BannerSlideItem = React.memo(
+  ({ item }: { item: string }) => {
+    useEffect(() => {
+      if (item) {
+        Image.prefetch(item);
+      }
+    }, [item]);
 
-  return (
-    <View style={styles.bannerItemContainer}>
-      <Image source={{ uri: item }} style={styles.bannerImage} resizeMode="cover" />
-      <LinearGradient
-        colors={['rgba(0,0,0,0.55)', 'transparent', 'rgba(0,0,0,0.45)']}
-        locations={[0, 0.45, 1]}
-        style={styles.bannerGradientOverlay}
-      />
-    </View>
-  );
-});
+    return (
+      <View style={styles.bannerItemContainer}>
+        <Image
+          source={{ uri: item }}
+          style={styles.bannerImage}
+          resizeMode="cover"
+        />
 
-// --- PRODUCTION-READY BANNER CAROUSEL ---
+        <LinearGradient
+          colors={[
+            'rgba(0,0,0,0.55)',
+            'transparent',
+            'rgba(0,0,0,0.45)',
+          ]}
+          locations={[0, 0.45, 1]}
+          style={styles.bannerGradientOverlay}
+        />
+      </View>
+    );
+  }
+);
+
+// --- BANNER CAROUSEL ---
 interface BannerCarouselProps {
   banners: string[];
   shopName: string;
@@ -265,19 +343,53 @@ interface BannerCarouselProps {
 }
 
 const BannerCarousel = React.memo(
-  ({ banners, shopName, avatarUrl, isFavorite, onToggleFavorite, onShare }: BannerCarouselProps) => {
+  ({
+    banners,
+    shopName,
+    avatarUrl,
+    isFavorite,
+    onToggleFavorite,
+    onShare,
+  }: BannerCarouselProps) => {
     const totalBanners = banners.length;
+
     const flatListRef = useRef<FlatList>(null);
+
     const [activeIndex, setActiveIndex] = useState(0);
+
     const activeIndexRef = useRef(0);
-    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const timerRef =
+      useRef<ReturnType<typeof setTimeout> | null>(null);
+
     const isUserDragging = useRef(false);
+
+    // Infinite-loop list:
+    //
+    // Normal:
+    // [1, 2, 3]
+    //
+    // Loop:
+    // [3, 1, 2, 3, 1]
+    //
+    // We start at index 1.
+    const loopedBanners = useMemo(() => {
+      if (totalBanners <= 1) {
+        return banners;
+      }
+
+      return [
+        banners[totalBanners - 1],
+        ...banners,
+        banners[0],
+      ];
+    }, [banners, totalBanners]);
 
     useEffect(() => {
       activeIndexRef.current = activeIndex;
     }, [activeIndex]);
 
-    // Recursive setTimeout for reliable autoplay
+    // Clear autoplay timer
     const clearAutoplayTimer = useCallback(() => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
@@ -285,54 +397,188 @@ const BannerCarousel = React.memo(
       }
     }, []);
 
-    const scheduleNextSlide = useCallback(() => {
-      clearAutoplayTimer();
-      if (totalBanners <= 1 || isUserDragging.current) return;
+    // Scroll to a logical banner index.
+    //
+    // Logical:
+    // 0 = first banner
+    // 1 = second banner
+    // 2 = third banner
+    //
+    // Physical:
+    // 1 = first banner
+    // 2 = second banner
+    // 3 = third banner
+    const scrollToLogicalIndex = useCallback(
+      (index: number, animated = true) => {
+        if (totalBanners <= 1) return;
 
-      timerRef.current = setTimeout(() => {
-        if (isUserDragging.current || totalBanners <= 1) return;
+        const normalizedIndex =
+          ((index % totalBanners) + totalBanners) %
+          totalBanners;
 
-        const nextIndex = (activeIndexRef.current + 1) % totalBanners;
         requestAnimationFrame(() => {
           flatListRef.current?.scrollToIndex({
-            index: nextIndex,
-            animated: true,
+            index: normalizedIndex + 1,
+            animated,
           });
         });
-      }, 4000);
-    }, [totalBanners, clearAutoplayTimer]);
+      },
+      [totalBanners]
+    );
 
-    useEffect(() => {
-      scheduleNextSlide();
-      return () => clearAutoplayTimer();
-    }, [activeIndex, totalBanners, scheduleNextSlide, clearAutoplayTimer]);
+    // Schedule next automatic slide.
+    const scheduleNextSlide = useCallback(() => {
+      clearAutoplayTimer();
 
-    const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const contentOffset = event.nativeEvent.contentOffset.x;
-      const index = Math.round(contentOffset / SCREEN_WIDTH);
-      if (index >= 0 && index < totalBanners && index !== activeIndexRef.current) {
-        setActiveIndex(index);
+      if (
+        totalBanners <= 1 ||
+        isUserDragging.current
+      ) {
+        return;
       }
-    };
 
+      timerRef.current = setTimeout(() => {
+        if (
+          isUserDragging.current ||
+          totalBanners <= 1
+        ) {
+          return;
+        }
+
+        const nextIndex =
+          (activeIndexRef.current + 1) %
+          totalBanners;
+
+        scrollToLogicalIndex(nextIndex, true);
+      }, 4000);
+    }, [
+      totalBanners,
+      clearAutoplayTimer,
+      scrollToLogicalIndex,
+    ]);
+
+    // Reset carousel when banner data changes.
+    useEffect(() => {
+      clearAutoplayTimer();
+
+      activeIndexRef.current = 0;
+      setActiveIndex(0);
+
+      if (totalBanners > 1) {
+        requestAnimationFrame(() => {
+          flatListRef.current?.scrollToIndex({
+            index: 1,
+            animated: false,
+          });
+        });
+      }
+
+      scheduleNextSlide();
+
+      return () => {
+        clearAutoplayTimer();
+      };
+    }, [
+      banners,
+      totalBanners,
+      clearAutoplayTimer,
+      scheduleNextSlide,
+    ]);
+
+    // User starts swiping.
     const handleScrollBeginDrag = () => {
       isUserDragging.current = true;
       clearAutoplayTimer();
     };
 
+    // User stops dragging.
     const handleScrollEndDrag = () => {
       isUserDragging.current = false;
+    };
+
+    // Called after the swipe animation completely finishes.
+    const handleMomentumScrollEnd = (
+      event: NativeSyntheticEvent<NativeScrollEvent>
+    ) => {
+      if (totalBanners <= 1) {
+        scheduleNextSlide();
+        return;
+      }
+
+      const contentOffset =
+        event.nativeEvent.contentOffset.x;
+
+      const rawIndex = Math.round(
+        contentOffset / SCREEN_WIDTH
+      );
+
+      let logicalIndex = rawIndex - 1;
+
+      // User moved left from banner 1 to the fake
+      // final banner.
+      //
+      // Physical:
+      // [3, 1, 2, 3, 1]
+      //  ↑
+      // rawIndex 0
+      //
+      // Immediately jump to the real banner 3.
+      if (rawIndex === 0) {
+        logicalIndex = totalBanners - 1;
+
+        requestAnimationFrame(() => {
+          flatListRef.current?.scrollToIndex({
+            index: totalBanners,
+            animated: false,
+          });
+        });
+      }
+
+      // User moved right from the final banner to
+      // the fake first banner.
+      //
+      // Physical:
+      // [3, 1, 2, 3, 1]
+      //                ↑
+      // rawIndex 4
+      //
+      // Immediately jump to the real banner 1.
+      else if (
+        rawIndex === totalBanners + 1
+      ) {
+        logicalIndex = 0;
+
+        requestAnimationFrame(() => {
+          flatListRef.current?.scrollToIndex({
+            index: 1,
+            animated: false,
+          });
+        });
+      }
+
+      logicalIndex =
+        ((logicalIndex % totalBanners) +
+          totalBanners) %
+        totalBanners;
+
+      activeIndexRef.current = logicalIndex;
+      setActiveIndex(logicalIndex);
+
+      isUserDragging.current = false;
+
       scheduleNextSlide();
     };
 
-    const handleScrollToIndexFailed = (info: { index: number }) => {
+    // Fallback if FlatList cannot calculate an index.
+    const handleScrollToIndexFailed = (
+      info: { index: number }
+    ) => {
       setTimeout(() => {
-        if (flatListRef.current) {
-          flatListRef.current.scrollToOffset({
-            offset: info.index * SCREEN_WIDTH,
-            animated: true,
-          });
-        }
+        flatListRef.current?.scrollToOffset({
+          offset:
+            info.index * SCREEN_WIDTH,
+          animated: false,
+        });
       }, 100);
     };
 
@@ -346,7 +592,9 @@ const BannerCarousel = React.memo(
     );
 
     const renderBannerItem = useCallback(
-      ({ item }: { item: string }) => <BannerSlideItem item={item} />,
+      ({ item }: { item: string }) => (
+        <BannerSlideItem item={item} />
+      ),
       []
     );
 
@@ -355,7 +603,7 @@ const BannerCarousel = React.memo(
         {totalBanners > 0 ? (
           <FlatList
             ref={flatListRef}
-            data={banners}
+            data={loopedBanners}
             horizontal
             pagingEnabled
             snapToInterval={SCREEN_WIDTH}
@@ -365,64 +613,145 @@ const BannerCarousel = React.memo(
             nestedScrollEnabled
             directionalLockEnabled
             disableIntervalMomentum
-            keyExtractor={(_, index) => `banner-slide-${index}`}
+            initialScrollIndex={
+              totalBanners > 1 ? 1 : 0
+            }
+            keyExtractor={(_, index) =>
+              `banner-slide-${index}`
+            }
             renderItem={renderBannerItem}
             getItemLayout={getItemLayout}
-            onScroll={handleScroll}
             scrollEventThrottle={16}
-            onScrollBeginDrag={handleScrollBeginDrag}
-            onScrollEndDrag={handleScrollEndDrag}
-            onMomentumScrollEnd={handleScrollEndDrag}
-            onScrollToIndexFailed={handleScrollToIndexFailed}
+            onScrollBeginDrag={
+              handleScrollBeginDrag
+            }
+            onScrollEndDrag={
+              handleScrollEndDrag
+            }
+            onMomentumScrollEnd={
+              handleMomentumScrollEnd
+            }
+            onScrollToIndexFailed={
+              handleScrollToIndexFailed
+            }
           />
         ) : (
-          <View style={styles.placeholderBannerContainer}>
+          <View
+            style={
+              styles.placeholderBannerContainer
+            }
+          >
             <LinearGradient
-              colors={['#0F172A', '#1E293B', '#0F172A']}
+              colors={[
+                '#0F172A',
+                '#1E293B',
+                '#0F172A',
+              ]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
+
             {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.placeholderBannerAvatar} />
+              <Image
+                source={{ uri: avatarUrl }}
+                style={
+                  styles.placeholderBannerAvatar
+                }
+              />
             ) : (
-              <View style={styles.placeholderBannerIconCircle}>
-                <Ionicons name="storefront-outline" size={42} color="#22CC71" />
+              <View
+                style={
+                  styles.placeholderBannerIconCircle
+                }
+              >
+                <Ionicons
+                  name="storefront-outline"
+                  size={42}
+                  color="#22CC71"
+                />
               </View>
             )}
-            <Text style={styles.placeholderBannerText}>{shopName}</Text>
+
+            <Text
+              style={
+                styles.placeholderBannerText
+              }
+            >
+              {shopName}
+            </Text>
           </View>
         )}
 
-        {/* Top Header Floating Overlay Actions */}
+        {/* TOP HEADER FLOATING ACTIONS */}
         <View style={styles.bannerHeaderActions}>
-          <Pressable onPress={() => router.back()} style={styles.actionIconButton} hitSlop={8}>
-            <Ionicons name="arrow-back" size={20} color="#0D0D0D" />
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.actionIconButton}
+            hitSlop={8}
+          >
+            <Ionicons
+              name="arrow-back"
+              size={20}
+              color="#0D0D0D"
+            />
           </Pressable>
 
-          <View style={styles.bannerRightActions}>
-            <Pressable onPress={onToggleFavorite} style={styles.actionIconButton} hitSlop={8}>
+          <View
+            style={styles.bannerRightActions}
+          >
+            <Pressable
+              onPress={onToggleFavorite}
+              style={styles.actionIconButton}
+              hitSlop={8}
+            >
               <Ionicons
-                name={isFavorite ? 'heart' : 'heart-outline'}
+                name={
+                  isFavorite
+                    ? 'heart'
+                    : 'heart-outline'
+                }
                 size={20}
-                color={isFavorite ? '#EF4444' : '#0D0D0D'}
+                color={
+                  isFavorite
+                    ? '#EF4444'
+                    : '#0D0D0D'
+                }
               />
             </Pressable>
-            <Pressable onPress={onShare} style={styles.actionIconButton} hitSlop={8}>
-              <Ionicons name="share-social-outline" size={19} color="#0D0D0D" />
+
+            <Pressable
+              onPress={onShare}
+              style={styles.actionIconButton}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="share-social-outline"
+                size={19}
+                color="#0D0D0D"
+              />
             </Pressable>
           </View>
         </View>
 
-        {/* Animated Pagination Dots */}
+        {/* PAGINATION DOTS */}
         {totalBanners > 1 && (
-          <View style={styles.paginationContainer}>
+          <View
+            style={styles.paginationContainer}
+          >
             {banners.map((_, i) => {
-              const isActive = i === activeIndex;
+              const isActive =
+                i === activeIndex;
+
               return (
                 <View
                   key={`dot-${i}`}
-                  style={[styles.paginationDot, isActive ? styles.paginationDotActive : styles.paginationDotInactive]}
+                  style={[
+                    styles.paginationDot,
+                    isActive
+                      ? styles.paginationDotActive
+                      : styles.paginationDotInactive,
+                  ]}
                 />
               );
             })}
@@ -447,16 +776,36 @@ function StaggeredProductCard({
   alreadyInCart: boolean;
   onAddToCart: (p: Product) => void;
 }) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const translateYAnim = useRef(new Animated.Value(18)).current;
-  const buttonScale = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(
+    new Animated.Value(0)
+  ).current;
 
-  const stockVal = item.stock != null ? Number(item.stock) : 0;
+  const translateYAnim = useRef(
+    new Animated.Value(18)
+  ).current;
+
+  const buttonScale = useRef(
+    new Animated.Value(1)
+  ).current;
+
+  const stockVal =
+    item.stock != null ? Number(item.stock) : 0;
+
   const isOutOfStock = stockVal === 0;
-  const isLowStock = stockVal > 0 && stockVal <= 5;
 
-  const showMRP = item.mrp && item.mrp > item.price;
-  const discountPercent = showMRP ? Math.round(((item.mrp! - item.price) / item.mrp!) * 100) : 0;
+  const isLowStock =
+    stockVal > 0 && stockVal <= 5;
+
+  const showMRP =
+    item.mrp && item.mrp > item.price;
+
+  const discountPercent = showMRP
+    ? Math.round(
+        ((item.mrp! - item.price) /
+          item.mrp!) *
+          100
+      )
+    : 0;
 
   useEffect(() => {
     Animated.parallel([
@@ -466,6 +815,7 @@ function StaggeredProductCard({
         delay: Math.min(index * 40, 200),
         useNativeDriver: true,
       }),
+
       Animated.spring(translateYAnim, {
         toValue: 0,
         delay: Math.min(index * 40, 200),
@@ -473,22 +823,43 @@ function StaggeredProductCard({
         useNativeDriver: true,
       }),
     ]).start();
-  }, [fadeAnim, translateYAnim, index]);
+  }, [
+    fadeAnim,
+    translateYAnim,
+    index,
+  ]);
 
   const handleAddPress = () => {
-    if (isOutOfStock || isStoreClosed) return;
+    if (
+      isOutOfStock ||
+      isStoreClosed
+    ) {
+      return;
+    }
+
     if (alreadyInCart) {
       router.push('/cart');
     } else {
       Animated.sequence([
-        Animated.timing(buttonScale, { toValue: 0.92, duration: 80, useNativeDriver: true }),
-        Animated.spring(buttonScale, { toValue: 1, friction: 4, useNativeDriver: true }),
+        Animated.timing(buttonScale, {
+          toValue: 0.92,
+          duration: 80,
+          useNativeDriver: true,
+        }),
+
+        Animated.spring(buttonScale, {
+          toValue: 1,
+          friction: 4,
+          useNativeDriver: true,
+        }),
       ]).start();
+
       onAddToCart(item);
     }
   };
 
-  const isDisabled = isOutOfStock || isStoreClosed;
+  const isDisabled =
+    isOutOfStock || isStoreClosed;
 
   return (
     <Animated.View
@@ -496,36 +867,68 @@ function StaggeredProductCard({
         styles.card,
         {
           opacity: fadeAnim,
-          transform: [{ translateY: translateYAnim }],
+          transform: [
+            {
+              translateY: translateYAnim,
+            },
+          ],
         },
       ]}
     >
       <Pressable
-        style={({ pressed }) => [styles.cardInnerPressable, pressed && { opacity: 0.92 }]}
+        style={({ pressed }) => [
+          styles.cardInnerPressable,
+          pressed && { opacity: 0.92 },
+        ]}
         onPress={() =>
           router.push({
             pathname: '/product/[id]',
-            params: { id: item.id },
+            params: {
+              id: item.id,
+            },
           } as any)
         }
       >
-        <View style={styles.imageContainer}>
+        <View
+          style={styles.imageContainer}
+        >
           {item.image_url ? (
-            <Image source={{ uri: item.image_url }} style={styles.productImage} resizeMode="cover" />
+            <Image
+              source={{
+                uri: item.image_url,
+              }}
+              style={styles.productImage}
+              resizeMode="cover"
+            />
           ) : (
-            <View style={styles.productImagePlaceholder}>
-              <Ionicons name="image-outline" size={32} color="#CBD5E1" />
+            <View
+              style={
+                styles.productImagePlaceholder
+              }
+            >
+              <Ionicons
+                name="image-outline"
+                size={32}
+                color="#CBD5E1"
+              />
             </View>
           )}
 
-          {/* Discount Tag */}
-          {showMRP && discountPercent > 0 && (
-            <View style={styles.discountBadge}>
-              <Text style={styles.discountText}>{discountPercent}% OFF</Text>
-            </View>
-          )}
+          {/* DISCOUNT TAG */}
+          {showMRP &&
+            discountPercent > 0 && (
+              <View
+                style={styles.discountBadge}
+              >
+                <Text
+                  style={styles.discountText}
+                >
+                  {discountPercent}% OFF
+                </Text>
+              </View>
+            )}
 
-          {/* Stock Tag */}
+          {/* STOCK TAG */}
           <View
             style={[
               styles.stockBadge,
@@ -539,39 +942,84 @@ function StaggeredProductCard({
             <View
               style={[
                 styles.stockDot,
-                { backgroundColor: isOutOfStock ? '#EF4444' : isLowStock ? '#F97316' : '#22CC71' },
+                {
+                  backgroundColor:
+                    isOutOfStock
+                      ? '#EF4444'
+                      : isLowStock
+                      ? '#F97316'
+                      : '#22CC71',
+                },
               ]}
             />
+
             <Text
               style={[
                 styles.stockStatusText,
-                { color: isOutOfStock ? '#EF4444' : isLowStock ? '#C2410C' : '#15803D' },
+                {
+                  color:
+                    isOutOfStock
+                      ? '#EF4444'
+                      : isLowStock
+                      ? '#C2410C'
+                      : '#15803D',
+                },
               ]}
             >
-              {isOutOfStock ? 'Out of Stock' : isLowStock ? `Only ${stockVal} left` : 'In Stock'}
+              {isOutOfStock
+                ? 'Out of Stock'
+                : isLowStock
+                ? `Only ${stockVal} left`
+                : 'In Stock'}
             </Text>
           </View>
         </View>
 
         <View style={styles.cardContent}>
-          <Text style={styles.productName} numberOfLines={2}>
+          <Text
+            style={styles.productName}
+            numberOfLines={2}
+          >
             {item.name}
           </Text>
 
           <View style={styles.priceRow}>
-            <Text style={styles.productPrice}>₹{item.price}</Text>
-            {showMRP && <Text style={styles.productMRP}>₹{item.mrp}</Text>}
+            <Text
+              style={styles.productPrice}
+            >
+              ₹{item.price}
+            </Text>
+
+            {showMRP && (
+              <Text
+                style={styles.productMRP}
+              >
+                ₹{item.mrp}
+              </Text>
+            )}
           </View>
         </View>
       </Pressable>
 
       <View style={styles.actionRow}>
-        <Animated.View style={{ transform: [{ scale: buttonScale }], width: '100%' }}>
+        <Animated.View
+          style={{
+            transform: [
+              {
+                scale: buttonScale,
+              },
+            ],
+            width: '100%',
+          }}
+        >
           <Pressable
             style={[
               styles.addToCartButton,
-              isDisabled && styles.outOfStockBtn,
-              alreadyInCart && !isStoreClosed && styles.alreadyInCartBtn,
+              isDisabled &&
+                styles.outOfStockBtn,
+              alreadyInCart &&
+                !isStoreClosed &&
+                styles.alreadyInCartBtn,
             ]}
             onPress={handleAddPress}
             disabled={isDisabled}
@@ -579,8 +1027,11 @@ function StaggeredProductCard({
             <Text
               style={[
                 styles.addToCartButtonText,
-                isDisabled && styles.outOfStockBtnText,
-                alreadyInCart && !isStoreClosed && styles.alreadyInCartBtnText,
+                isDisabled &&
+                  styles.outOfStockBtnText,
+                alreadyInCart &&
+                  !isStoreClosed &&
+                  styles.alreadyInCartBtnText,
               ]}
             >
               {isStoreClosed
@@ -600,48 +1051,127 @@ function StaggeredProductCard({
 
 // --- MAIN STORE SCREEN ---
 export default function StoreScreen() {
-  const { id } = useLocalSearchParams();
-  const vendorId = Array.isArray(id) ? id[0] : id;
+  const { id } =
+    useLocalSearchParams();
 
-  const [vendorProfile, setVendorProfile] = useState<VendorProfile | null>(null);
-  const [banners, setBanners] = useState<string[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<CategoryRow[]>([]);
-  const [customerCoords, setCustomerCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const vendorId = Array.isArray(id)
+    ? id[0]
+    : id;
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [cartItems, setCartItems] = useState(getCart());
-  const [loading, setLoading] = useState(true);
-  const [isFavorite, setIsFavorite] = useState(false);
+  const [
+    vendorProfile,
+    setVendorProfile,
+  ] = useState<VendorProfile | null>(
+    null
+  );
+
+  const [
+    banners,
+    setBanners,
+  ] = useState<string[]>([]);
+
+  const [
+    products,
+    setProducts,
+  ] = useState<Product[]>([]);
+
+  const [
+    categories,
+    setCategories,
+  ] = useState<CategoryRow[]>([]);
+
+  const [
+    customerCoords,
+    setCustomerCoords,
+  ] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+
+  const [
+    searchQuery,
+    setSearchQuery,
+  ] = useState('');
+
+  const [
+    selectedCategory,
+    setSelectedCategory,
+  ] = useState<string | null>(null);
+
+  const [
+    cartItems,
+    setCartItems,
+  ] = useState(getCart());
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    isFavorite,
+    setIsFavorite,
+  ] = useState(false);
 
   // Entrance animations
-  const headerOpacity = useRef(new Animated.Value(0)).current;
-  const productsListOpacity = useRef(new Animated.Value(1)).current;
+  const headerOpacity = useRef(
+    new Animated.Value(0)
+  ).current;
+
+  const productsListOpacity =
+    useRef(
+      new Animated.Value(1)
+    ).current;
 
   // Floating Cart Animations
-  const cartSlideAnim = useRef(new Animated.Value(120)).current;
-  const cartBounceAnim = useRef(new Animated.Value(1)).current;
-  const prevCartCount = useRef(cartItems.length);
+  const cartSlideAnim = useRef(
+    new Animated.Value(120)
+  ).current;
+
+  const cartBounceAnim = useRef(
+    new Animated.Value(1)
+  ).current;
+
+  const prevCartCount = useRef(
+    cartItems.length
+  );
 
   // --- REALTIME SUBSCRIPTION ---
   useEffect(() => {
     if (!vendorId) return;
 
-    let profileChannel: ReturnType<typeof supabase.channel> | null = null;
-    let bannerChannel: ReturnType<typeof supabase.channel> | null = null;
+    let profileChannel:
+      | ReturnType<typeof supabase.channel>
+      | null = null;
 
-    const profileChannelName = `customer-vendor-profile-${vendorId}`;
-    const bannerChannelName = `customer-vendor-banners-${vendorId}`;
+    let bannerChannel:
+      | ReturnType<typeof supabase.channel>
+      | null = null;
 
-    // 1. Remove existing profile channel if any
-    const existingChannels = supabase.getChannels();
-    const existingProfileChannel = existingChannels.find((ch) => ch.topic === `realtime:${profileChannelName}`);
+    const profileChannelName =
+      `customer-vendor-profile-${vendorId}`;
+
+    const bannerChannelName =
+      `customer-vendor-banners-${vendorId}`;
+
+    // Remove existing profile channel
+    const existingChannels =
+      supabase.getChannels();
+
+    const existingProfileChannel =
+      existingChannels.find(
+        (ch) =>
+          ch.topic ===
+          `realtime:${profileChannelName}`
+      );
+
     if (existingProfileChannel) {
-      supabase.removeChannel(existingProfileChannel);
+      supabase.removeChannel(
+        existingProfileChannel
+      );
     }
 
-    // 2. Create fresh profile channel & attach listeners BEFORE subscribe()
+    // Create profile channel
     profileChannel = supabase
       .channel(profileChannelName)
       .on(
@@ -654,23 +1184,33 @@ export default function StoreScreen() {
         },
         (payload: any) => {
           if (payload.new) {
-            setVendorProfile((prev) => ({
-              ...prev,
-              ...(payload.new as VendorProfile),
-            }));
+            setVendorProfile(
+              (prev) => ({
+                ...prev,
+                ...(payload.new as VendorProfile),
+              })
+            );
           }
         }
       );
 
     profileChannel.subscribe();
 
-    // 1. Remove existing banner channel if any
-    const existingBannerChannel = existingChannels.find((ch) => ch.topic === `realtime:${bannerChannelName}`);
+    // Remove existing banner channel
+    const existingBannerChannel =
+      existingChannels.find(
+        (ch) =>
+          ch.topic ===
+          `realtime:${bannerChannelName}`
+      );
+
     if (existingBannerChannel) {
-      supabase.removeChannel(existingBannerChannel);
+      supabase.removeChannel(
+        existingBannerChannel
+      );
     }
 
-    // 2. Create fresh banner channel & attach listeners BEFORE subscribe()
+    // Create banner channel
     bannerChannel = supabase
       .channel(bannerChannelName)
       .on(
@@ -689,45 +1229,89 @@ export default function StoreScreen() {
     bannerChannel.subscribe();
 
     return () => {
-      if (profileChannel) supabase.removeChannel(profileChannel);
-      if (bannerChannel) supabase.removeChannel(bannerChannel);
+      if (profileChannel) {
+        supabase.removeChannel(
+          profileChannel
+        );
+      }
+
+      if (bannerChannel) {
+        supabase.removeChannel(
+          bannerChannel
+        );
+      }
     };
   }, [vendorId]);
 
   // --- CART SUBSCRIPTION ---
   useEffect(() => {
-    const unsubscribe = subscribeCart(() => {
-      const newCart = getCart();
-      const newCount = newCart.length;
+    const unsubscribe =
+      subscribeCart(() => {
+        const newCart = getCart();
+        const newCount =
+          newCart.length;
 
-      setCartItems([...newCart]);
+        setCartItems([
+          ...newCart,
+        ]);
 
-      if (prevCartCount.current === 0 && newCount > 0) {
-        Animated.spring(cartSlideAnim, {
-          toValue: 0,
-          friction: 7,
-          tension: 40,
-          useNativeDriver: true,
-        }).start();
-      } else if (prevCartCount.current > 0 && newCount === 0) {
-        Animated.timing(cartSlideAnim, {
-          toValue: 120,
-          duration: 250,
-          useNativeDriver: true,
-        }).start();
-      }
+        if (
+          prevCartCount.current === 0 &&
+          newCount > 0
+        ) {
+          Animated.spring(
+            cartSlideAnim,
+            {
+              toValue: 0,
+              friction: 7,
+              tension: 40,
+              useNativeDriver: true,
+            }
+          ).start();
+        } else if (
+          prevCartCount.current > 0 &&
+          newCount === 0
+        ) {
+          Animated.timing(
+            cartSlideAnim,
+            {
+              toValue: 120,
+              duration: 250,
+              useNativeDriver: true,
+            }
+          ).start();
+        }
 
-      if (newCount > 0) {
-        Animated.sequence([
-          Animated.spring(cartBounceAnim, { toValue: 1.05, useNativeDriver: true, speed: 20 }),
-          Animated.spring(cartBounceAnim, { toValue: 1, useNativeDriver: true, friction: 4 }),
-        ]).start();
-      }
+        if (newCount > 0) {
+          Animated.sequence([
+            Animated.spring(
+              cartBounceAnim,
+              {
+                toValue: 1.05,
+                useNativeDriver: true,
+                speed: 20,
+              }
+            ),
+            Animated.spring(
+              cartBounceAnim,
+              {
+                toValue: 1,
+                useNativeDriver: true,
+                friction: 4,
+              }
+            ),
+          ]).start();
+        }
 
-      prevCartCount.current = newCount;
-    });
+        prevCartCount.current =
+          newCount;
+      });
+
     return unsubscribe;
-  }, [cartSlideAnim, cartBounceAnim]);
+  }, [
+    cartSlideAnim,
+    cartBounceAnim,
+  ]);
 
   useEffect(() => {
     if (cartItems.length > 0) {
@@ -744,230 +1328,529 @@ export default function StoreScreen() {
     async function fetchData() {
       try {
         setLoading(true);
+
         await Promise.all([
           fetchVendorAndBanners(),
           fetchProductsAndCategories(),
           fetchCustomerAddress(),
         ]);
       } catch (err) {
-        console.error('Error fetching store screen data:', err);
+        console.error(
+          'Error fetching store screen data:',
+          err
+        );
       } finally {
         setLoading(false);
-        Animated.timing(headerOpacity, {
-          toValue: 1,
-          duration: 350,
-          useNativeDriver: true,
-        }).start();
+
+        Animated.timing(
+          headerOpacity,
+          {
+            toValue: 1,
+            duration: 350,
+            useNativeDriver: true,
+          }
+        ).start();
       }
     }
 
     fetchData();
   }, [vendorId]);
 
+  // --- FETCH BANNERS ONLY ---
   async function fetchBannersOnly() {
-    const bannersRes = await supabase
-      .from('vendor_profile_banners')
-      .select('banner_url, banner_order')
-      .eq('vendor_id', vendorId)
-      .eq('is_active', true)
-      .order('banner_order', { ascending: true });
+    const bannersRes =
+      await supabase
+        .from('vendor_profile_banners')
+        .select(
+          'banner_url, banner_order'
+        )
+        .eq(
+          'vendor_id',
+          vendorId
+        )
+        .eq(
+          'is_active',
+          true
+        )
+        .order(
+          'banner_order',
+          {
+            ascending: true,
+          }
+        );
 
     const bannerList: string[] = [];
-    if (!bannersRes.error && bannersRes.data && bannersRes.data.length > 0) {
-      bannersRes.data.forEach((b: { banner_url?: string; banner_order?: number }) => {
-        if (b.banner_url) bannerList.push(b.banner_url);
-      });
+
+    if (
+      !bannersRes.error &&
+      bannersRes.data &&
+      bannersRes.data.length > 0
+    ) {
+      bannersRes.data.forEach(
+        (b: {
+          banner_url?: string;
+          banner_order?: number;
+        }) => {
+          if (b.banner_url) {
+            bannerList.push(
+              b.banner_url
+            );
+          }
+        }
+      );
     }
 
-    if (bannerList.length === 0 && vendorProfile?.banner_url) {
-      bannerList.push(vendorProfile.banner_url);
+    if (
+      bannerList.length === 0 &&
+      vendorProfile?.banner_url
+    ) {
+      bannerList.push(
+        vendorProfile.banner_url
+      );
     }
 
-    bannerList.forEach((url) => Image.prefetch(url));
+    bannerList.forEach((url) =>
+      Image.prefetch(url)
+    );
+
     setBanners(bannerList);
   }
 
+  // --- FETCH VENDOR + BANNERS ---
   async function fetchVendorAndBanners() {
-    const vendorPromise = supabase
-      .from('vendor_profiles')
-      .select('*, vendors(shop_name)')
-      .eq('vendor_id', vendorId)
-      .maybeSingle();
+    const vendorPromise =
+      supabase
+        .from('vendor_profiles')
+        .select(
+          '*, vendors(shop_name)'
+        )
+        .eq(
+          'vendor_id',
+          vendorId
+        )
+        .maybeSingle();
 
-    const bannersPromise = supabase
-      .from('vendor_profile_banners')
-      .select('banner_url, banner_order')
-      .eq('vendor_id', vendorId)
-      .eq('is_active', true)
-      .order('banner_order', { ascending: true });
+    const bannersPromise =
+      supabase
+        .from(
+          'vendor_profile_banners'
+        )
+        .select(
+          'banner_url, banner_order'
+        )
+        .eq(
+          'vendor_id',
+          vendorId
+        )
+        .eq(
+          'is_active',
+          true
+        )
+        .order(
+          'banner_order',
+          {
+            ascending: true,
+          }
+        );
 
-    const [vendorRes, bannersRes] = await Promise.all([vendorPromise, bannersPromise]);
+    const [
+      vendorRes,
+      bannersRes,
+    ] = await Promise.all([
+      vendorPromise,
+      bannersPromise,
+    ]);
 
-    let loadedProfile: VendorProfile | null = null;
-    if (!vendorRes.error && vendorRes.data) {
-      loadedProfile = vendorRes.data as unknown as VendorProfile;
-      setVendorProfile(loadedProfile);
+    let loadedProfile:
+      | VendorProfile
+      | null = null;
+
+    if (
+      !vendorRes.error &&
+      vendorRes.data
+    ) {
+      loadedProfile =
+        vendorRes.data as unknown as VendorProfile;
+
+      setVendorProfile(
+        loadedProfile
+      );
     }
 
     const bannerList: string[] = [];
-    if (!bannersRes.error && bannersRes.data && bannersRes.data.length > 0) {
-      bannersRes.data.forEach((b: { banner_url?: string; banner_order?: number }) => {
-        if (b.banner_url) bannerList.push(b.banner_url);
-      });
+
+    if (
+      !bannersRes.error &&
+      bannersRes.data &&
+      bannersRes.data.length > 0
+    ) {
+      bannersRes.data.forEach(
+        (b: {
+          banner_url?: string;
+          banner_order?: number;
+        }) => {
+          if (b.banner_url) {
+            bannerList.push(
+              b.banner_url
+            );
+          }
+        }
+      );
     }
 
-    if (bannerList.length === 0 && loadedProfile?.banner_url) {
-      bannerList.push(loadedProfile.banner_url);
+    if (
+      bannerList.length === 0 &&
+      loadedProfile?.banner_url
+    ) {
+      bannerList.push(
+        loadedProfile.banner_url
+      );
     }
 
-    bannerList.forEach((url) => Image.prefetch(url));
+    bannerList.forEach((url) =>
+      Image.prefetch(url)
+    );
+
     setBanners(bannerList);
   }
 
+  // --- FETCH PRODUCTS + CATEGORIES ---
   async function fetchProductsAndCategories() {
-    const catPromise = supabase.from('product_categories').select('id, name, icon');
-    const prodPromise = supabase
-      .from('products')
-      .select('*')
-      .eq('vendor_id', vendorId)
-      .eq('status', 'active');
+    const catPromise =
+      supabase
+        .from('product_categories')
+        .select(
+          'id, name, icon'
+        );
 
-    const [catRes, prodRes] = await Promise.all([catPromise, prodPromise]);
+    const prodPromise =
+      supabase
+        .from('products')
+        .select('*')
+        .eq(
+          'vendor_id',
+          vendorId
+        )
+        .eq(
+          'status',
+          'active'
+        );
 
-    if (!catRes.error && catRes.data) {
-      setCategories(catRes.data as CategoryRow[]);
+    const [
+      catRes,
+      prodRes,
+    ] = await Promise.all([
+      catPromise,
+      prodPromise,
+    ]);
+
+    if (
+      !catRes.error &&
+      catRes.data
+    ) {
+      setCategories(
+        catRes.data as CategoryRow[]
+      );
     }
 
-    if (!prodRes.error && prodRes.data) {
-      setProducts(prodRes.data as Product[]);
+    if (
+      !prodRes.error &&
+      prodRes.data
+    ) {
+      setProducts(
+        prodRes.data as Product[]
+      );
     }
   }
 
+  // --- FETCH CUSTOMER ADDRESS ---
   async function fetchCustomerAddress() {
     try {
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError || !authData?.user) return;
+      const {
+        data: authData,
+        error: authError,
+      } =
+        await supabase.auth.getUser();
 
-      const user = authData.user;
-      const { data: customer, error: customerError } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('auth_user_id', user.id)
-        .maybeSingle();
+      if (
+        authError ||
+        !authData?.user
+      ) {
+        return;
+      }
 
-      if (customerError || !customer) return;
+      const user =
+        authData.user;
 
-      const { data: addressData, error: addressError } = await supabase
-        .from('customer_addresses')
-        .select('latitude, longitude')
-        .eq('customer_id', customer.id)
-        .eq('is_default', true)
-        .maybeSingle();
+      const {
+        data: customer,
+        error: customerError,
+      } =
+        await supabase
+          .from('customers')
+          .select('id')
+          .eq(
+            'auth_user_id',
+            user.id
+          )
+          .maybeSingle();
 
-      if (addressError || !addressData) return;
-      if (addressData.latitude == null || addressData.longitude == null) return;
+      if (
+        customerError ||
+        !customer
+      ) {
+        return;
+      }
+
+      const {
+        data: addressData,
+        error: addressError,
+      } =
+        await supabase
+          .from('customer_addresses')
+          .select(
+            'latitude, longitude'
+          )
+          .eq(
+            'customer_id',
+            customer.id
+          )
+          .eq(
+            'is_default',
+            true
+          )
+          .maybeSingle();
+
+      if (
+        addressError ||
+        !addressData
+      ) {
+        return;
+      }
+
+      if (
+        addressData.latitude ==
+          null ||
+        addressData.longitude ==
+          null
+      ) {
+        return;
+      }
 
       setCustomerCoords({
-        latitude: Number(addressData.latitude),
-        longitude: Number(addressData.longitude),
+        latitude: Number(
+          addressData.latitude
+        ),
+        longitude: Number(
+          addressData.longitude
+        ),
       });
     } catch (err) {
-      console.error('Error fetching customer address:', err);
+      console.error(
+        'Error fetching customer address:',
+        err
+      );
     }
   }
 
-  const distanceText = useMemo(() => {
-    if (
-      customerCoords?.latitude != null &&
-      customerCoords?.longitude != null &&
-      vendorProfile?.latitude != null &&
-      vendorProfile?.longitude != null
-    ) {
-      const dist = calculateDistance(
-        customerCoords.latitude,
-        customerCoords.longitude,
-        Number(vendorProfile.latitude),
-        Number(vendorProfile.longitude)
+  const distanceText =
+    useMemo(() => {
+      if (
+        customerCoords?.latitude !=
+          null &&
+        customerCoords?.longitude !=
+          null &&
+        vendorProfile?.latitude !=
+          null &&
+        vendorProfile?.longitude !=
+          null
+      ) {
+        const dist =
+          calculateDistance(
+            customerCoords.latitude,
+            customerCoords.longitude,
+            Number(
+              vendorProfile.latitude
+            ),
+            Number(
+              vendorProfile.longitude
+            )
+          );
+
+        return `${dist.toFixed(
+          1
+        )} km`;
+      }
+
+      return null;
+    }, [
+      customerCoords,
+      vendorProfile,
+    ]);
+
+  const hoursDisplay =
+    useMemo(() => {
+      return getBusinessHoursDisplay(
+        vendorProfile
       );
-      return `${dist.toFixed(1)} km`;
-    }
-    return null;
-  }, [customerCoords, vendorProfile]);
+    }, [vendorProfile]);
 
-  const hoursDisplay = useMemo(() => {
-    return getBusinessHoursDisplay(vendorProfile);
-  }, [vendorProfile]);
+  const isStoreClosed =
+    useMemo(() => {
+      return (
+        (
+          vendorProfile?.store_status ||
+          'closed'
+        ).toLowerCase() ===
+        'closed'
+      );
+    }, [vendorProfile]);
 
-  const isStoreClosed = useMemo(() => {
-    return (vendorProfile?.store_status || 'closed').toLowerCase() === 'closed';
-  }, [vendorProfile]);
+  const isStoreBusy =
+    useMemo(() => {
+      return (
+        vendorProfile?.store_status ||
+        ''
+      ).toLowerCase() ===
+        'busy';
+    }, [vendorProfile]);
 
-  const isStoreBusy = useMemo(() => {
-    return (vendorProfile?.store_status || '').toLowerCase() === 'busy';
-  }, [vendorProfile]);
+  const prepTimeText =
+    useMemo(() => {
+      if (
+        vendorProfile?.preparation_time_minutes !=
+        null
+      ) {
+        return `${vendorProfile.preparation_time_minutes} mins`;
+      }
 
-  const prepTimeText = useMemo(() => {
-    if (vendorProfile?.preparation_time_minutes != null) {
-      return `${vendorProfile.preparation_time_minutes} mins`;
-    }
-    return '15-25 mins';
-  }, [vendorProfile]);
+      return '15-25 mins';
+    }, [vendorProfile]);
 
-  const activeCategories = useMemo(() => {
-    const catIds = new Set<string>();
-    products.forEach((p) => {
-      if (p.category_id) catIds.add(p.category_id);
-    });
-    return categories.filter((c) => catIds.has(c.id));
-  }, [products, categories]);
+  const activeCategories =
+    useMemo(() => {
+      const catIds =
+        new Set<string>();
 
-  const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
-      const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = selectedCategory ? p.category_id === selectedCategory : true;
-      return matchesSearch && matchesCategory;
-    });
-  }, [products, searchQuery, selectedCategory]);
-
-  const handleCategorySelect = (catId: string | null) => {
-    Animated.timing(productsListOpacity, {
-      toValue: 0.3,
-      duration: 100,
-      useNativeDriver: true,
-    }).start(() => {
-      setSelectedCategory(catId);
-      Animated.timing(productsListOpacity, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }).start();
-    });
-  };
-
-  const handleShare = async () => {
-    try {
-      const name = vendorProfile?.vendors?.shop_name || 'Store';
-      await Share.share({
-        message: `Check out ${name} on Rivo!`,
+      products.forEach((p) => {
+        if (p.category_id) {
+          catIds.add(
+            p.category_id
+          );
+        }
       });
-    } catch {
-      // Ignored
-    }
-  };
 
-  const totalCartQuantity = useMemo(() => {
-    return cartItems.reduce((acc, curr) => acc + (curr.quantity || 0), 0);
-  }, [cartItems]);
+      return categories.filter(
+        (c) => catIds.has(c.id)
+      );
+    }, [
+      products,
+      categories,
+    ]);
 
-  const totalCartPrice = useMemo(() => {
-    return cartItems.reduce((acc, curr) => acc + (curr.price * (curr.quantity || 0)), 0);
-  }, [cartItems]);
+  const filteredProducts =
+    useMemo(() => {
+      return products.filter(
+        (p) => {
+          const matchesSearch =
+            p.name
+              .toLowerCase()
+              .includes(
+                searchQuery.toLowerCase()
+              );
 
-  const shopName = vendorProfile?.vendors?.shop_name || 'Store';
+          const matchesCategory =
+            selectedCategory
+              ? p.category_id ===
+                selectedCategory
+              : true;
 
-  const handleAddToCart = useCallback((product: Product) => {
-    addToCart(product);
-  }, []);
+          return (
+            matchesSearch &&
+            matchesCategory
+          );
+        }
+      );
+    }, [
+      products,
+      searchQuery,
+      selectedCategory,
+    ]);
+
+  const handleCategorySelect =
+    (catId: string | null) => {
+      Animated.timing(
+        productsListOpacity,
+        {
+          toValue: 0.3,
+          duration: 100,
+          useNativeDriver: true,
+        }
+      ).start(() => {
+        setSelectedCategory(
+          catId
+        );
+
+        Animated.timing(
+          productsListOpacity,
+          {
+            toValue: 1,
+            duration: 180,
+            useNativeDriver: true,
+          }
+        ).start();
+      });
+    };
+
+  const handleShare =
+    async () => {
+      try {
+        const name =
+          vendorProfile?.vendors
+            ?.shop_name ||
+          'Store';
+
+        await Share.share({
+          message: `Check out ${name} on Rivo!`,
+        });
+      } catch {
+        // Ignored
+      }
+    };
+
+  const totalCartQuantity =
+    useMemo(() => {
+      return cartItems.reduce(
+        (acc, curr) =>
+          acc +
+          (curr.quantity || 0),
+        0
+      );
+    }, [cartItems]);
+
+  const totalCartPrice =
+    useMemo(() => {
+      return cartItems.reduce(
+        (acc, curr) =>
+          acc +
+          curr.price *
+            (curr.quantity || 0),
+        0
+      );
+    }, [cartItems]);
+
+  const shopName =
+    vendorProfile?.vendors
+      ?.shop_name ||
+    'Store';
+
+  const handleAddToCart =
+    useCallback(
+      (product: Product) => {
+        addToCart(product);
+      },
+      []
+    );
 
   if (loading) {
     return <StoreSkeleton />;
@@ -978,195 +1861,532 @@ export default function StoreScreen() {
       <Animated.FlatList
         key="store-grid-2-col"
         data={filteredProducts}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) =>
+          item.id
+        }
         numColumns={2}
-        columnWrapperStyle={styles.rowWrapper}
-        contentContainerStyle={styles.productsList}
-        showsVerticalScrollIndicator={false}
-        style={{ opacity: productsListOpacity }}
+        columnWrapperStyle={
+          styles.rowWrapper
+        }
+        contentContainerStyle={
+          styles.productsList
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
+        style={{
+          opacity:
+            productsListOpacity,
+        }}
         ListHeaderComponent={
-          <View style={styles.topSectionContainer}>
+          <View
+            style={
+              styles.topSectionContainer
+            }
+          >
             {/* HERO BANNER CAROUSEL */}
             <BannerCarousel
               banners={banners}
               shopName={shopName}
-              avatarUrl={vendorProfile?.avatar_url}
-              isFavorite={isFavorite}
-              onToggleFavorite={() => setIsFavorite(!isFavorite)}
-              onShare={handleShare}
+              avatarUrl={
+                vendorProfile?.avatar_url
+              }
+              isFavorite={
+                isFavorite
+              }
+              onToggleFavorite={() =>
+                setIsFavorite(
+                  !isFavorite
+                )
+              }
+              onShare={
+                handleShare
+              }
             />
 
             {/* FLOATING GLASS STORE INFO CARD */}
-            <Animated.View style={[styles.profileCard, { opacity: headerOpacity }]}>
-              <View style={styles.cardHeaderRow}>
-                <View style={styles.avatarWrapper}>
+            <Animated.View
+              style={[
+                styles.profileCard,
+                {
+                  opacity:
+                    headerOpacity,
+                },
+              ]}
+            >
+              <View
+                style={
+                  styles.cardHeaderRow
+                }
+              >
+                <View
+                  style={
+                    styles.avatarWrapper
+                  }
+                >
                   {vendorProfile?.avatar_url ? (
-                    <Image source={{ uri: vendorProfile.avatar_url }} style={styles.avatar} />
+                    <Image
+                      source={{
+                        uri: vendorProfile.avatar_url,
+                      }}
+                      style={
+                        styles.avatar
+                      }
+                    />
                   ) : (
-                    <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                      <Text style={styles.avatarText}>{shopName.charAt(0).toUpperCase()}</Text>
+                    <View
+                      style={[
+                        styles.avatar,
+                        styles.avatarPlaceholder,
+                      ]}
+                    >
+                      <Text
+                        style={
+                          styles.avatarText
+                        }
+                      >
+                        {shopName
+                          .charAt(0)
+                          .toUpperCase()}
+                      </Text>
                     </View>
                   )}
                 </View>
 
-                {/* Status Badge */}
-                <View style={[styles.statusBadge, { backgroundColor: hoursDisplay.bgColor }]}>
-                  <View style={[styles.statusDot, { backgroundColor: hoursDisplay.color }]} />
-                  <Text style={[styles.statusBadgeText, { color: hoursDisplay.color }]}>
-                    {hoursDisplay.statusBadge}
+                {/* STATUS BADGE */}
+                <View
+                  style={[
+                    styles.statusBadge,
+                    {
+                      backgroundColor:
+                        hoursDisplay.bgColor,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.statusDot,
+                      {
+                        backgroundColor:
+                          hoursDisplay.color,
+                      },
+                    ]}
+                  />
+
+                  <Text
+                    style={[
+                      styles.statusBadgeText,
+                      {
+                        color:
+                          hoursDisplay.color,
+                      },
+                    ]}
+                  >
+                    {
+                      hoursDisplay.statusBadge
+                    }
                   </Text>
                 </View>
               </View>
 
-              <View style={styles.storeNameRow}>
-                <Text style={styles.storeName} numberOfLines={1}>
+              <View
+                style={
+                  styles.storeNameRow
+                }
+              >
+                <Text
+                  style={
+                    styles.storeName
+                  }
+                  numberOfLines={1}
+                >
                   {shopName}
                 </Text>
-                <Ionicons name="checkmark-circle" size={18} color="#22CC71" style={styles.verifiedBadge} />
+
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color="#22CC71"
+                  style={
+                    styles.verifiedBadge
+                  }
+                />
               </View>
 
               {vendorProfile?.tagline ? (
-                <Text style={styles.storeTagline} numberOfLines={1}>
-                  {vendorProfile.tagline}
+                <Text
+                  style={
+                    styles.storeTagline
+                  }
+                  numberOfLines={1}
+                >
+                  {
+                    vendorProfile.tagline
+                  }
                 </Text>
               ) : null}
 
               {/* STORE CLOSED BANNER */}
               {isStoreClosed && (
-                <View style={styles.closedWarningBanner}>
-                  <Ionicons name="information-circle" size={15} color="#EF4444" />
-                  <Text style={styles.closedWarningText}>
-                    Store is closed. Orders are currently unavailable.
+                <View
+                  style={
+                    styles.closedWarningBanner
+                  }
+                >
+                  <Ionicons
+                    name="information-circle"
+                    size={15}
+                    color="#EF4444"
+                  />
+
+                  <Text
+                    style={
+                      styles.closedWarningText
+                    }
+                  >
+                    Store is closed. Orders
+                    are currently unavailable.
                   </Text>
                 </View>
               )}
 
               {/* STORE BUSY BANNER */}
               {isStoreBusy && (
-                <View style={styles.busyWarningBanner}>
-                  <Ionicons name="alert-circle" size={15} color="#F97316" />
-                  <Text style={styles.busyWarningText}>
-                    High order volume. Deliveries may take slightly longer.
+                <View
+                  style={
+                    styles.busyWarningBanner
+                  }
+                >
+                  <Ionicons
+                    name="alert-circle"
+                    size={15}
+                    color="#F97316"
+                  />
+
+                  <Text
+                    style={
+                      styles.busyWarningText
+                    }
+                  >
+                    High order volume.
+                    Deliveries may take
+                    slightly longer.
                   </Text>
                 </View>
               )}
 
-              <View style={styles.cardDivider} />
+              <View
+                style={
+                  styles.cardDivider
+                }
+              />
 
               {/* METRICS ROW */}
-              <View style={styles.metricsContainer}>
-                <View style={styles.metricItem}>
-                  <Ionicons name="star" size={14} color="#F59E0B" />
-                  <Text style={styles.metricItemText}>4.8</Text>
+              <View
+                style={
+                  styles.metricsContainer
+                }
+              >
+                <View
+                  style={
+                    styles.metricItem
+                  }
+                >
+                  <Ionicons
+                    name="star"
+                    size={14}
+                    color="#F59E0B"
+                  />
+
+                  <Text
+                    style={
+                      styles.metricItemText
+                    }
+                  >
+                    4.8
+                  </Text>
                 </View>
 
-                <View style={styles.metricDotSeparator} />
+                <View
+                  style={
+                    styles.metricDotSeparator
+                  }
+                />
 
-                <View style={styles.metricItem}>
-                  <Ionicons name="time-outline" size={14} color="#64748B" />
-                  <Text style={styles.metricItemText}>{prepTimeText}</Text>
+                <View
+                  style={
+                    styles.metricItem
+                  }
+                >
+                  <Ionicons
+                    name="time-outline"
+                    size={14}
+                    color="#64748B"
+                  />
+
+                  <Text
+                    style={
+                      styles.metricItemText
+                    }
+                  >
+                    {prepTimeText}
+                  </Text>
                 </View>
 
                 {distanceText && (
                   <>
-                    <View style={styles.metricDotSeparator} />
-                    <View style={styles.metricItem}>
-                      <Ionicons name="location-outline" size={14} color="#64748B" />
-                      <Text style={styles.metricItemText}>{distanceText}</Text>
+                    <View
+                      style={
+                        styles.metricDotSeparator
+                      }
+                    />
+
+                    <View
+                      style={
+                        styles.metricItem
+                      }
+                    >
+                      <Ionicons
+                        name="location-outline"
+                        size={14}
+                        color="#64748B"
+                      />
+
+                      <Text
+                        style={
+                          styles.metricItemText
+                        }
+                      >
+                        {
+                          distanceText
+                        }
+                      </Text>
                     </View>
                   </>
                 )}
               </View>
 
-              <View style={styles.todayTimingsRow}>
-                <Ionicons name="calendar-outline" size={13} color="#94A3B8" />
-                <Text style={styles.todayTimingsText}>Today: {hoursDisplay.timeLabel}</Text>
+              <View
+                style={
+                  styles.todayTimingsRow
+                }
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={13}
+                  color="#94A3B8"
+                />
+
+                <Text
+                  style={
+                    styles.todayTimingsText
+                  }
+                >
+                  Today:{' '}
+                  {
+                    hoursDisplay.timeLabel
+                  }
+                </Text>
               </View>
             </Animated.View>
 
-            {/* STICKY/ROUNDED SEARCH BAR */}
-            <View style={styles.searchContainer}>
-              <View style={styles.searchInner}>
-                <Ionicons name="search" size={18} color="#94A3B8" />
+            {/* SEARCH BAR */}
+            <View
+              style={
+                styles.searchContainer
+              }
+            >
+              <View
+                style={
+                  styles.searchInner
+                }
+              >
+                <Ionicons
+                  name="search"
+                  size={18}
+                  color="#94A3B8"
+                />
+
                 <TextInput
-                  style={styles.searchInput}
+                  style={
+                    styles.searchInput
+                  }
                   placeholder="Search products in store..."
                   placeholderTextColor="#94A3B8"
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
+                  value={
+                    searchQuery
+                  }
+                  onChangeText={
+                    setSearchQuery
+                  }
                 />
-                {searchQuery.length > 0 && (
-                  <Pressable onPress={() => setSearchQuery('')} hitSlop={6}>
-                    <Ionicons name="close-circle" size={18} color="#94A3B8" />
+
+                {searchQuery.length >
+                  0 && (
+                  <Pressable
+                    onPress={() =>
+                      setSearchQuery(
+                        ''
+                      )
+                    }
+                    hitSlop={6}
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={18}
+                      color="#94A3B8"
+                    />
                   </Pressable>
                 )}
               </View>
             </View>
 
             {/* CATEGORY CHIPS */}
-            {activeCategories.length > 0 && (
+            {activeCategories.length >
+              0 && (
               <View>
                 <ScrollView
                   horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.categoriesList}
+                  showsHorizontalScrollIndicator={
+                    false
+                  }
+                  contentContainerStyle={
+                    styles.categoriesList
+                  }
                 >
                   <Pressable
-                    onPress={() => handleCategorySelect(null)}
-                    style={({ pressed }) => [
+                    onPress={() =>
+                      handleCategorySelect(
+                        null
+                      )
+                    }
+                    style={({
+                      pressed,
+                    }) => [
                       styles.chip,
-                      selectedCategory === null ? styles.chipSelected : styles.chipInactive,
-                      pressed && styles.chipPressed,
+                      selectedCategory ===
+                      null
+                        ? styles.chipSelected
+                        : styles.chipInactive,
+                      pressed &&
+                        styles.chipPressed,
                     ]}
                   >
-                    <Text style={[styles.chipText, selectedCategory === null && styles.chipTextSelected]}>
+                    <Text
+                      style={[
+                        styles.chipText,
+                        selectedCategory ===
+                          null &&
+                          styles.chipTextSelected,
+                      ]}
+                    >
                       All Items
                     </Text>
                   </Pressable>
 
-                  {activeCategories.map((cat) => {
-                    const isSelected = selectedCategory === cat.id;
-                    return (
-                      <Pressable
-                        key={cat.id}
-                        onPress={() => handleCategorySelect(cat.id)}
-                        style={({ pressed }) => [
-                          styles.chip,
-                          isSelected ? styles.chipSelected : styles.chipInactive,
-                          pressed && styles.chipPressed,
-                        ]}
-                      >
-                        <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                          {cat.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                  {activeCategories.map(
+                    (cat) => {
+                      const isSelected =
+                        selectedCategory ===
+                        cat.id;
+
+                      return (
+                        <Pressable
+                          key={cat.id}
+                          onPress={() =>
+                            handleCategorySelect(
+                              cat.id
+                            )
+                          }
+                          style={({
+                            pressed,
+                          }) => [
+                            styles.chip,
+                            isSelected
+                              ? styles.chipSelected
+                              : styles.chipInactive,
+                            pressed &&
+                              styles.chipPressed,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              isSelected &&
+                                styles.chipTextSelected,
+                            ]}
+                          >
+                            {
+                              cat.name
+                            }
+                          </Text>
+                        </Pressable>
+                      );
+                    }
+                  )}
                 </ScrollView>
               </View>
             )}
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.emptyStateContainer}>
-            <View style={styles.emptyIconCircle}>
-              <Ionicons name="basket-outline" size={44} color="#94A3B8" />
+          <View
+            style={
+              styles.emptyStateContainer
+            }
+          >
+            <View
+              style={
+                styles.emptyIconCircle
+              }
+            >
+              <Ionicons
+                name="basket-outline"
+                size={44}
+                color="#94A3B8"
+              />
             </View>
-            <Text style={styles.emptyTitle}>No items found</Text>
-            <Text style={styles.emptySubText}>
-              Try searching for something else or pick another category.
+
+            <Text
+              style={styles.emptyTitle}
+            >
+              No items found
+            </Text>
+
+            <Text
+              style={
+                styles.emptySubText
+              }
+            >
+              Try searching for something
+              else or pick another category.
             </Text>
           </View>
         }
-        renderItem={({ item, index }) => {
-          const alreadyInCart = cartItems.some((c) => String(c.id) === String(item.id));
+        renderItem={({
+          item,
+          index,
+        }) => {
+          const alreadyInCart =
+            cartItems.some(
+              (c) =>
+                String(c.id) ===
+                String(item.id)
+            );
+
           return (
             <StaggeredProductCard
               item={item}
               index={index}
-              isStoreClosed={isStoreClosed}
-              alreadyInCart={alreadyInCart}
-              onAddToCart={handleAddToCart}
+              isStoreClosed={
+                isStoreClosed
+              }
+              alreadyInCart={
+                alreadyInCart
+              }
+              onAddToCart={
+                handleAddToCart
+              }
             />
           );
         }}
@@ -1178,41 +2398,117 @@ export default function StoreScreen() {
           style={[
             styles.floatingCartContainer,
             {
-              transform: [{ translateY: cartSlideAnim }, { scale: cartBounceAnim }],
+              transform: [
+                {
+                  translateY:
+                    cartSlideAnim,
+                },
+                {
+                  scale:
+                    cartBounceAnim,
+                },
+              ],
             },
           ]}
         >
           <Pressable
             onPress={() => {
               if (!isStoreClosed) {
-                router.push('/cart');
+                router.push(
+                  '/cart'
+                );
               }
             }}
-            disabled={isStoreClosed}
+            disabled={
+              isStoreClosed
+            }
             style={({ pressed }) => [
               styles.floatingCartButton,
-              isStoreClosed && styles.floatingCartDisabled,
-              pressed && { opacity: 0.92 },
+              isStoreClosed &&
+                styles.floatingCartDisabled,
+              pressed && {
+                opacity: 0.92,
+              },
             ]}
           >
-            <View style={styles.floatingCartLeft}>
-              <View style={styles.cartIconWrapper}>
-                <Ionicons name="bag" size={18} color={isStoreClosed ? '#94A3B8' : '#22CC71'} />
-                <View style={styles.cartCountBadge}>
-                  <Text style={styles.cartCountText}>{totalCartQuantity}</Text>
+            <View
+              style={
+                styles.floatingCartLeft
+              }
+            >
+              <View
+                style={
+                  styles.cartIconWrapper
+                }
+              >
+                <Ionicons
+                  name="bag"
+                  size={18}
+                  color={
+                    isStoreClosed
+                      ? '#94A3B8'
+                      : '#22CC71'
+                  }
+                />
+
+                <View
+                  style={
+                    styles.cartCountBadge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.cartCountText
+                    }
+                  >
+                    {
+                      totalCartQuantity
+                    }
+                  </Text>
                 </View>
               </View>
+
               <View>
-                <Text style={styles.cartPriceText}>₹{totalCartPrice}</Text>
-                <Text style={styles.cartSubText}>
-                  {isStoreClosed ? 'Closed for ordering' : 'View cart & checkout'}
+                <Text
+                  style={
+                    styles.cartPriceText
+                  }
+                >
+                  ₹{totalCartPrice}
+                </Text>
+
+                <Text
+                  style={
+                    styles.cartSubText
+                  }
+                >
+                  {isStoreClosed
+                    ? 'Closed for ordering'
+                    : 'View cart & checkout'}
                 </Text>
               </View>
             </View>
 
-            <View style={styles.floatingCartRight}>
-              <Text style={styles.viewCartText}>{isStoreClosed ? 'Closed' : 'View Cart'}</Text>
-              <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+            <View
+              style={
+                styles.floatingCartRight
+              }
+            >
+              <Text
+                style={
+                  styles.viewCartText
+                }
+              >
+                {isStoreClosed
+                  ? 'Closed'
+                  : 'View Cart'}
+              </Text>
+
+              <Ionicons
+                name="arrow-forward"
+                size={16}
+                color="#FFFFFF"
+              />
             </View>
           </Pressable>
         </Animated.View>
@@ -1227,6 +2523,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FAFAFA',
   },
+
   topSectionContainer: {
     backgroundColor: '#FAFAFA',
     marginBottom: 8,
@@ -1239,18 +2536,22 @@ const styles = StyleSheet.create({
     position: 'relative',
     backgroundColor: '#0F172A',
   },
+
   bannerItemContainer: {
     width: SCREEN_WIDTH,
     height: BANNER_HEIGHT,
     position: 'relative',
   },
+
   bannerImage: {
     width: '100%',
     height: '100%',
   },
+
   bannerGradientOverlay: {
     ...StyleSheet.absoluteFill,
   },
+
   placeholderBannerContainer: {
     width: '100%',
     height: '100%',
@@ -1258,6 +2559,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: 10,
   },
+
   placeholderBannerAvatar: {
     width: 64,
     height: 64,
@@ -1266,6 +2568,7 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF33',
     marginBottom: 10,
   },
+
   placeholderBannerIconCircle: {
     width: 64,
     height: 64,
@@ -1277,6 +2580,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#334155',
   },
+
   placeholderBannerText: {
     color: '#FFFFFF',
     fontSize: 18,
@@ -1295,10 +2599,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
+
   bannerRightActions: {
     flexDirection: 'row',
     gap: 10,
   },
+
   actionIconButton: {
     width: 38,
     height: 38,
@@ -1307,7 +2613,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.12,
     shadowRadius: 4,
     elevation: 3,
@@ -1322,14 +2631,17 @@ const styles = StyleSheet.create({
     gap: 6,
     alignItems: 'center',
   },
+
   paginationDot: {
     height: 6,
     borderRadius: 3,
   },
+
   paginationDotActive: {
     width: 18,
     backgroundColor: '#22CC71',
   },
+
   paginationDotInactive: {
     width: 6,
     backgroundColor: '#FFFFFF80',
@@ -1343,21 +2655,27 @@ const styles = StyleSheet.create({
     marginTop: -20,
     padding: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     shadowOpacity: 0.06,
     shadowRadius: 12,
     elevation: 4,
     borderWidth: 1,
     borderColor: '#F1F5F9',
   },
+
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+
   avatarWrapper: {
     marginTop: -28,
   },
+
   avatar: {
     width: 58,
     height: 58,
@@ -1366,16 +2684,19 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#FFFFFF',
   },
+
   avatarPlaceholder: {
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#22CC71',
   },
+
   avatarText: {
     color: '#FFF',
     fontSize: 22,
     fontWeight: '800',
   },
+
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1384,35 +2705,42 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     gap: 5,
   },
+
   statusDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
   },
+
   statusBadgeText: {
     fontSize: 12,
     fontWeight: '700',
   },
+
   storeNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 8,
   },
+
   storeName: {
     fontSize: 19,
     fontWeight: '800',
     color: '#0D0D0D',
     letterSpacing: -0.3,
   },
+
   verifiedBadge: {
     marginLeft: 6,
   },
+
   storeTagline: {
     fontSize: 13,
     color: '#64748B',
     fontWeight: '500',
     marginTop: 2,
   },
+
   closedWarningBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1423,12 +2751,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 10,
   },
+
   closedWarningText: {
     color: '#991B1B',
     fontSize: 12,
     fontWeight: '600',
     flex: 1,
   },
+
   busyWarningBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1439,31 +2769,37 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 10,
   },
+
   busyWarningText: {
     color: '#9A3412',
     fontSize: 12,
     fontWeight: '600',
     flex: 1,
   },
+
   cardDivider: {
     height: 1,
     backgroundColor: '#F1F5F9',
     marginVertical: 12,
   },
+
   metricsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+
   metricItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
+
   metricItemText: {
     fontSize: 13,
     fontWeight: '700',
     color: '#334155',
   },
+
   metricDotSeparator: {
     width: 3,
     height: 3,
@@ -1471,12 +2807,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#CBD5E1',
     marginHorizontal: 10,
   },
+
   todayTimingsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginTop: 8,
   },
+
   todayTimingsText: {
     fontSize: 12,
     color: '#64748B',
@@ -1489,6 +2827,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginBottom: 6,
   },
+
   searchInner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1499,11 +2838,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 44,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.03,
     shadowRadius: 4,
     elevation: 1,
   },
+
   searchInput: {
     flex: 1,
     paddingHorizontal: 8,
@@ -1518,28 +2861,34 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: 8,
   },
+
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
   },
+
   chipSelected: {
     backgroundColor: '#22CC71',
     borderColor: '#22CC71',
   },
+
   chipInactive: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E2E8F0',
   },
+
   chipPressed: {
     opacity: 0.8,
   },
+
   chipText: {
     color: '#475569',
     fontWeight: '600',
     fontSize: 13,
   },
+
   chipTextSelected: {
     color: '#FFFFFF',
     fontWeight: '700',
@@ -1549,10 +2898,12 @@ const styles = StyleSheet.create({
   productsList: {
     paddingBottom: 110,
   },
+
   rowWrapper: {
     justifyContent: 'space-between',
     paddingHorizontal: 16,
   },
+
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -1562,31 +2913,39 @@ const styles = StyleSheet.create({
     borderColor: '#F1F5F9',
     justifyContent: 'space-between',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.03,
     shadowRadius: 6,
     elevation: 2,
     overflow: 'hidden',
   },
+
   cardInnerPressable: {
     width: '100%',
   },
+
   imageContainer: {
     width: '100%',
     aspectRatio: 1.15,
     backgroundColor: '#F8FAFC',
     position: 'relative',
   },
+
   productImage: {
     width: '100%',
     height: '100%',
   },
+
   productImagePlaceholder: {
     width: '100%',
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   stockBadge: {
     position: 'absolute',
     bottom: 6,
@@ -1598,24 +2957,30 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
   },
+
   stockDot: {
     width: 5,
     height: 5,
     borderRadius: 2.5,
   },
+
   stockBadgeIn: {
     backgroundColor: '#E8FBF0',
   },
+
   stockBadgeLow: {
     backgroundColor: '#FFEDD5',
   },
+
   stockBadgeOut: {
     backgroundColor: '#FEE2E2',
   },
+
   stockStatusText: {
     fontSize: 9,
     fontWeight: '700',
   },
+
   discountBadge: {
     position: 'absolute',
     top: 6,
@@ -1625,14 +2990,17 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 6,
   },
+
   discountText: {
     color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '800',
   },
+
   cardContent: {
     padding: 10,
   },
+
   productName: {
     fontSize: 13,
     fontWeight: '600',
@@ -1640,27 +3008,32 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     minHeight: 34,
   },
+
   priceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 6,
     marginTop: 6,
   },
+
   productPrice: {
     fontSize: 15,
     fontWeight: '800',
     color: '#0D0D0D',
   },
+
   productMRP: {
     fontSize: 11,
     color: '#94A3B8',
     textDecorationLine: 'line-through',
     fontWeight: '500',
   },
+
   actionRow: {
     paddingHorizontal: 10,
     paddingBottom: 10,
   },
+
   addToCartButton: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
@@ -1671,22 +3044,27 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 10,
   },
+
   addToCartButtonText: {
     color: '#22CC71',
     fontSize: 12,
     fontWeight: '800',
   },
+
   outOfStockBtn: {
     backgroundColor: '#F1F5F9',
     borderColor: '#E2E8F0',
   },
+
   outOfStockBtnText: {
     color: '#94A3B8',
   },
+
   alreadyInCartBtn: {
     backgroundColor: '#22CC71',
     borderColor: '#22CC71',
   },
+
   alreadyInCartBtnText: {
     color: '#FFFFFF',
   },
@@ -1698,11 +3076,15 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
     shadowColor: '#22CC71',
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 8,
   },
+
   floatingCartButton: {
     backgroundColor: '#22CC71',
     borderRadius: 16,
@@ -1713,14 +3095,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     height: 54,
   },
+
   floatingCartDisabled: {
     backgroundColor: '#94A3B8',
   },
+
   floatingCartLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
+
   cartIconWrapper: {
     width: 34,
     height: 34,
@@ -1730,6 +3115,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
+
   cartCountBadge: {
     position: 'absolute',
     top: -4,
@@ -1742,26 +3128,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 3,
   },
+
   cartCountText: {
     color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '800',
   },
+
   cartPriceText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
   },
+
   cartSubText: {
     color: '#E8FBF0',
     fontSize: 10,
     fontWeight: '500',
   },
+
   floatingCartRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
+
   viewCartText: {
     color: '#FFFFFF',
     fontSize: 14,
@@ -1775,6 +3166,7 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
     paddingHorizontal: 32,
   },
+
   emptyIconCircle: {
     width: 72,
     height: 72,
@@ -1784,11 +3176,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 12,
   },
+
   emptyTitle: {
     fontSize: 16,
     fontWeight: '800',
     color: '#0D0D0D',
   },
+
   emptySubText: {
     fontSize: 13,
     color: '#64748B',
@@ -1802,35 +3196,41 @@ const styles = StyleSheet.create({
     width: '100%',
     height: BANNER_HEIGHT,
   },
+
   skeletonAvatar: {
     width: 58,
     height: 58,
     borderRadius: 16,
     marginTop: -20,
   },
+
   skeletonBadge: {
     width: 60,
     height: 20,
     borderRadius: 10,
   },
+
   skeletonTitle: {
     width: '60%',
     height: 20,
     borderRadius: 4,
     marginTop: 12,
   },
+
   skeletonSubTitle: {
     width: '40%',
     height: 14,
     borderRadius: 4,
     marginTop: 8,
   },
+
   skeletonMetrics: {
     width: '100%',
     height: 24,
     borderRadius: 6,
     marginTop: 12,
   },
+
   skeletonGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1838,6 +3238,7 @@ const styles = StyleSheet.create({
     gap: 12,
     justifyContent: 'space-between',
   },
+
   skeletonCard: {
     width: CARD_WIDTH,
     height: 220,

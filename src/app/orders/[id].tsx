@@ -18,7 +18,7 @@ import {
   View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
-import { notificationService } from '../../services/notificationService';
+import { NotificationService } from '../../services/notificationService';
 
 interface OrderItem {
   id: string;
@@ -303,11 +303,11 @@ export default function OrderTrackingScreen() {
         });
 
       // Send Order Cancellation Notification
-      try {
-        await notificationService.getCustomerNotifications();
-      } catch (notifErr) {
-        console.error('Failed to send cancellation notification:', notifErr);
-      }
+     try {
+  await NotificationService.getNotifications(order.customer_id, 'customer');
+} catch (notifErr) {
+  console.error('Failed to fetch customer notifications:', notifErr);
+}
 
       Alert.alert("Success", "Order cancelled successfully.");
       fetchOrderAndTrackingDetails();

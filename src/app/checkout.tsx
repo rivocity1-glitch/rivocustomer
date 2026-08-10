@@ -1,4 +1,5 @@
 // src/app/checkout.tsx
+
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -13,13 +14,13 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
 } from 'react-native';
 
 import { cart, clearCart } from '../lib/cart';
 import { supabase } from '../lib/supabase';
 import { calculateBilling, DeliveryConfig } from '../utils/billing';
-import { calculateDistance } from "../utils/distance";
+import { calculateDistance } from '../utils/distance';
 
 interface SavedAddress {
   id?: string;
@@ -33,7 +34,13 @@ interface SavedAddress {
   longitude?: number | null;
 }
 
-type OnlineAppType = 'gpay' | 'phonepe' | 'paytm' | 'bhim' | 'amazonpay' | 'other';
+type OnlineAppType =
+  | 'gpay'
+  | 'phonepe'
+  | 'paytm'
+  | 'bhim'
+  | 'amazonpay'
+  | 'other';
 
 interface PaymentAppOption {
   id: OnlineAppType;
@@ -108,12 +115,18 @@ export default function CheckoutScreen() {
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [address, setAddress] = useState<SavedAddress | null>(null);
   const [loading, setLoading] = useState(true);
-  const [vendorLocation, setVendorLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  const [vendorLocation, setVendorLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
   const [showAddressForm, setShowAddressForm] = useState(false);
+
   const [formAddress, setFormAddress] = useState<SavedAddress>({
     address_line1: '',
     address_line2: '',
@@ -125,47 +138,73 @@ export default function CheckoutScreen() {
     longitude: null,
   });
 
-  const [successOrderDetails, setSuccessOrderDetails] = useState<{
-    orderId: string;
-    orderNumber: string;
-    totalAmount: number;
-    eta: string;
-    paymentMethod: 'cod' | 'online';
-    otp: string;
-  } | null>(null);
+  const [successOrderDetails, setSuccessOrderDetails] =
+    useState<{
+      orderId: string;
+      orderNumber: string;
+      totalAmount: number;
+      eta: string;
+      paymentMethod: 'cod' | 'online';
+      otp: string;
+    } | null>(null);
 
-  const [vendorPlanName, setVendorPlanName] = useState<string>('free');
+  const [vendorPlanName, setVendorPlanName] =
+    useState<string>('free');
 
-  // Dynamic remote settings states
-  const [platformFee, setPlatformFee] = useState<number>(0);
-  const [deliveryConfig, setDeliveryConfig] = useState<DeliveryConfig | null>(null);
+  // Fixed platform fee in rupees.
+  // Database:
+  // setting_key = platform_fee
+  // setting_value = 6
+  const [platformFee, setPlatformFee] =
+    useState<number>(0);
 
-  // Modern payment specific states
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
-  const [selectedOnlineApp, setSelectedOnlineApp] = useState<OnlineAppType | null>(null);
-  
-  // Specific states gathered directly from active contextual vendor relational parameters
-  const [vendorUpiId, setVendorUpiId] = useState<string>('');
-  const [vendorShopName, setVendorShopName] = useState<string>('');
-  
-  // Track deep link handoff state
-  const [paymentSubmitted, setPaymentSubmitted] = useState(false);
+  const [deliveryConfig, setDeliveryConfig] =
+    useState<DeliveryConfig | null>(null);
 
-  // App Not Installed Modal State
-  const [missingAppModal, setMissingAppModal] = useState<{ visible: boolean; appName: string }>({
-    visible: false,
-    appName: '',
-  });
+  const [paymentMethod, setPaymentMethod] =
+    useState<'cod' | 'online'>('cod');
 
-  // Pre-generate order number so it can be safely referenced in the transaction note (tn) prior to submission
+  const [selectedOnlineApp, setSelectedOnlineApp] =
+    useState<OnlineAppType | null>(null);
+
+  const [vendorUpiId, setVendorUpiId] =
+    useState<string>('');
+
+  const [vendorShopName, setVendorShopName] =
+    useState<string>('');
+
+  const [paymentSubmitted, setPaymentSubmitted] =
+    useState(false);
+
+  const [missingAppModal, setMissingAppModal] =
+    useState<{
+      visible: boolean;
+      appName: string;
+    }>({
+      visible: false,
+      appName: '',
+    });
+
   const preGeneratedOrderNumber = useMemo(() => {
-    return 'ORD-' + Math.floor(100000 + Math.random() * 900000);
+    return (
+      'ORD-' +
+      Math.floor(
+        100000 + Math.random() * 900000
+      )
+    );
   }, []);
 
-  // Animation values for success state
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
-  const checkmarkBounce = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(
+    new Animated.Value(0)
+  ).current;
+
+  const scaleAnim = useRef(
+    new Animated.Value(0.95)
+  ).current;
+
+  const checkmarkBounce = useRef(
+    new Animated.Value(0)
+  ).current;
 
   useEffect(() => {
     if (successOrderDetails !== null) {
@@ -179,21 +218,26 @@ export default function CheckoutScreen() {
           duration: 400,
           useNativeDriver: true,
         }),
+
         Animated.timing(scaleAnim, {
           toValue: 1,
           duration: 400,
           useNativeDriver: true,
         }),
+
         Animated.spring(checkmarkBounce, {
           toValue: 1,
           friction: 4,
           tension: 40,
           useNativeDriver: true,
-        })
+        }),
       ]).start();
     }
   }, [successOrderDetails]);
 
+  /*
+   * VENDOR → CUSTOMER DISTANCE
+   */
   const distance = useMemo(() => {
     if (
       address?.latitude == null ||
@@ -203,6 +247,7 @@ export default function CheckoutScreen() {
     ) {
       return null;
     }
+
     return calculateDistance(
       vendorLocation.latitude,
       vendorLocation.longitude,
@@ -211,7 +256,9 @@ export default function CheckoutScreen() {
     );
   }, [address, vendorLocation]);
 
-  // Unified cost calculation logic using the central billing engine
+  /*
+   * CENTRAL BILLING ENGINE
+   */
   const checkoutCharges = useMemo(() => {
     if (distance === null) {
       return {
@@ -227,20 +274,29 @@ export default function CheckoutScreen() {
       };
     }
 
-    // Map active subscription plans explicitly to target percentages
     let commissionPercent = 5;
-    if (vendorPlanName === 'basic' || vendorPlanName === 'growth' || vendorPlanName === 'pro') {
+
+    if (
+      vendorPlanName === 'basic' ||
+      vendorPlanName === 'growth' ||
+      vendorPlanName === 'pro'
+    ) {
       commissionPercent = 0;
     }
 
     return calculateBilling({
-      cartItems: cart, 
+      cartItems: cart,
       distanceKm: distance,
       platformFee,
       commissionPercent,
       deliveryConfig,
     });
-  }, [cart, distance, vendorPlanName, platformFee, deliveryConfig]);
+  }, [
+    distance,
+    vendorPlanName,
+    platformFee,
+    deliveryConfig,
+  ]);
 
   useEffect(() => {
     loadCheckoutDetails();
@@ -250,65 +306,174 @@ export default function CheckoutScreen() {
     try {
       setLoading(true);
 
-      // Fetch dynamic platform configurations asynchronously
-      const { data: feeSettings } = await supabase
+      /*
+       * FIXED PLATFORM FEE
+       *
+       * Actual database row:
+       *
+       * setting_key   = platform_fee
+       * setting_value = 6
+       *
+       * This is ₹6 fixed, NOT 6%.
+       */
+      const {
+        data: feeSettings,
+        error: feeSettingsError,
+      } = await supabase
         .from('platform_settings')
         .select('setting_value')
-        .eq('setting_key', 'platform_fee_config')
+        .eq('setting_key', 'platform_fee')
         .maybeSingle();
 
-      if (feeSettings?.setting_value) {
-        const parsedFee = typeof feeSettings.setting_value === 'string' 
-          ? JSON.parse(feeSettings.setting_value) 
-          : feeSettings.setting_value;
-        setPlatformFee(Number(parsedFee.platform_fee || 0));
+      if (feeSettingsError) {
+        console.error(
+          'Error loading platform fee:',
+          feeSettingsError
+        );
+
+        setPlatformFee(0);
+      } else if (
+        feeSettings?.setting_value !== null &&
+        feeSettings?.setting_value !== undefined
+      ) {
+        const fixedPlatformFee = Number(
+          feeSettings.setting_value
+        );
+
+        if (
+          Number.isFinite(fixedPlatformFee) &&
+          fixedPlatformFee >= 0
+        ) {
+          setPlatformFee(fixedPlatformFee);
+        } else {
+          console.error(
+            'Invalid platform fee value:',
+            feeSettings.setting_value
+          );
+
+          setPlatformFee(0);
+        }
+      } else {
+        console.warn(
+          'Platform fee setting not found. Using ₹0.'
+        );
+
+        setPlatformFee(0);
       }
 
-      const { data: deliverySettings } = await supabase
+      /*
+       * DELIVERY CONFIGURATION
+       */
+      const {
+        data: deliverySettings,
+        error: deliverySettingsError,
+      } = await supabase
         .from('platform_settings')
         .select('setting_value')
         .eq('setting_key', 'delivery_config')
         .maybeSingle();
 
-      if (deliverySettings?.setting_value) {
-        const parsedDelivery = typeof deliverySettings.setting_value === 'string'
-          ? JSON.parse(deliverySettings.setting_value)
-          : deliverySettings.setting_value;
-        setDeliveryConfig({
-          base_customer_fee: Number(parsedDelivery.base_customer_fee || 0),
-          customer_increment: Number(parsedDelivery.customer_increment || 0),
-          base_rider_earning: Number(parsedDelivery.base_rider_earning || 0),
-          rider_increment: Number(parsedDelivery.rider_increment || 0),
-          base_distance: Number(parsedDelivery.base_distance || 0),
-          max_auto_distance: Number(parsedDelivery.max_auto_distance || 0),
-        });
+      if (deliverySettingsError) {
+        console.error(
+          'Error loading delivery configuration:',
+          deliverySettingsError
+        );
       }
 
-      const { data, error: userError } = await supabase.auth.getUser();
+      if (
+        deliverySettings?.setting_value !== null &&
+        deliverySettings?.setting_value !== undefined
+      ) {
+        try {
+          const parsedDelivery =
+            typeof deliverySettings.setting_value ===
+            'string'
+              ? JSON.parse(
+                  deliverySettings.setting_value
+                )
+              : deliverySettings.setting_value;
+
+          setDeliveryConfig({
+            base_customer_fee: Number(
+              parsedDelivery?.base_customer_fee ?? 0
+            ),
+            customer_increment: Number(
+              parsedDelivery?.customer_increment ?? 0
+            ),
+            base_rider_earning: Number(
+              parsedDelivery?.base_rider_earning ?? 0
+            ),
+            rider_increment: Number(
+              parsedDelivery?.rider_increment ?? 0
+            ),
+            base_distance: Number(
+              parsedDelivery?.base_distance ?? 0
+            ),
+            max_auto_distance: Number(
+              parsedDelivery?.max_auto_distance ?? 0
+            ),
+          });
+        } catch (error) {
+          console.error(
+            'Error parsing delivery configuration:',
+            error
+          );
+
+          setDeliveryConfig(null);
+        }
+      }
+
+      /*
+       * AUTHENTICATED CUSTOMER
+       */
+      const {
+        data,
+        error: userError,
+      } = await supabase.auth.getUser();
+
       const user = data?.user ?? null;
 
       if (userError || !user) {
-        Alert.alert('Login Required', 'Please login before placing an order');
+        Alert.alert(
+          'Login Required',
+          'Please login before placing an order'
+        );
+
         router.replace('/login');
         return;
       }
 
       setAuthUserId(user.id);
 
+      /*
+       * CUSTOMER PROFILE
+       */
       const { data: customer } = await supabase
         .from('customers')
-        .select('id, customer_name, phone')
+        .select(
+          'id, customer_name, phone'
+        )
         .eq('auth_user_id', user.id)
         .maybeSingle();
 
       if (customer) {
         setCustomerId(customer.id);
-        setCustomerName(customer.customer_name || '');
+        setCustomerName(
+          customer.customer_name || ''
+        );
         setPhone(customer.phone || '');
 
-        const { data: addressData, error: addressError } = await supabase
+        /*
+         * DEFAULT ADDRESS
+         */
+        const {
+          data: addressData,
+          error: addressError,
+        } = await supabase
           .from('customer_addresses')
-          .select('id, address_line1, address_line2, landmark, city, state, pin_code, latitude, longitude')
+          .select(
+            'id, address_line1, address_line2, landmark, city, state, pin_code, latitude, longitude'
+          )
           .eq('customer_id', customer.id)
           .eq('is_default', true)
           .maybeSingle();
@@ -316,82 +481,162 @@ export default function CheckoutScreen() {
         if (!addressError && addressData) {
           setAddress({
             id: addressData.id,
-            address_line1: addressData.address_line1 || '',
-            address_line2: addressData.address_line2 || '',
-            landmark: addressData.landmark || '',
-            city: addressData.city || '',
-            state: addressData.state || '',
-            pin_code: addressData.pin_code || '',
-            latitude: addressData.latitude ? Number(addressData.latitude) : null,
-            longitude: addressData.longitude ? Number(addressData.longitude) : null,
+            address_line1:
+              addressData.address_line1 || '',
+            address_line2:
+              addressData.address_line2 || '',
+            landmark:
+              addressData.landmark || '',
+            city:
+              addressData.city || '',
+            state:
+              addressData.state || '',
+            pin_code:
+              addressData.pin_code || '',
+            latitude:
+              addressData.latitude !== null &&
+              addressData.latitude !== undefined
+                ? Number(addressData.latitude)
+                : null,
+            longitude:
+              addressData.longitude !== null &&
+              addressData.longitude !== undefined
+                ? Number(addressData.longitude)
+                : null,
           });
         }
       }
 
+      /*
+       * VENDOR CONTEXT
+       */
       if (cart.length > 0) {
-        const vendorId = cart[0].vendor_id;
-        
-        const { data: vendorProfile, error: vendorError } = await supabase
+        const vendorId =
+          cart[0].vendor_id;
+
+        const {
+          data: vendorProfile,
+          error: vendorError,
+        } = await supabase
           .from('vendor_profiles')
-          .select('latitude, longitude, upi_id, vendors(shop_name)')
+          .select(
+            'latitude, longitude, upi_id, vendors(shop_name)'
+          )
           .eq('vendor_id', vendorId)
           .maybeSingle();
 
         if (!vendorError && vendorProfile) {
-          if (vendorProfile.latitude && vendorProfile.longitude) {
+          if (
+            vendorProfile.latitude !== null &&
+            vendorProfile.latitude !== undefined &&
+            vendorProfile.longitude !== null &&
+            vendorProfile.longitude !== undefined
+          ) {
             setVendorLocation({
-              latitude: Number(vendorProfile.latitude),
-              longitude: Number(vendorProfile.longitude),
+              latitude: Number(
+                vendorProfile.latitude
+              ),
+              longitude: Number(
+                vendorProfile.longitude
+              ),
             });
           }
+
           if (vendorProfile.upi_id) {
-            setVendorUpiId(vendorProfile.upi_id);
+            setVendorUpiId(
+              vendorProfile.upi_id
+            );
           }
-          const nestedVendorObj: any = vendorProfile.vendors;
-          if (nestedVendorObj && nestedVendorObj.shop_name) {
-            setVendorShopName(nestedVendorObj.shop_name);
+
+          const nestedVendorObj: any =
+            vendorProfile.vendors;
+
+          if (
+            nestedVendorObj &&
+            nestedVendorObj.shop_name
+          ) {
+            setVendorShopName(
+              nestedVendorObj.shop_name
+            );
           }
         }
 
+        /*
+         * VENDOR SUBSCRIPTION
+         */
         try {
-          const { data: vendorSub } = await supabase
-            .from('subscriptions')
-            .select('plan_name, status')
-            .eq('vendor_id', vendorId)
-            .eq('status', 'active')
-            .maybeSingle();
-            
-          if (vendorSub && vendorSub.plan_name) {
-            setVendorPlanName(vendorSub.plan_name.toLowerCase());
+          const { data: vendorSub } =
+            await supabase
+              .from('subscriptions')
+              .select(
+                'plan_name, status'
+              )
+              .eq(
+                'vendor_id',
+                vendorId
+              )
+              .eq(
+                'status',
+                'active'
+              )
+              .maybeSingle();
+
+          if (
+            vendorSub &&
+            vendorSub.plan_name
+          ) {
+            setVendorPlanName(
+              vendorSub.plan_name.toLowerCase()
+            );
           } else {
             setVendorPlanName('free');
           }
         } catch (e) {
-          console.error('Error determining vendor subscription:', e);
+          console.error(
+            'Error determining vendor subscription:',
+            e
+          );
+
           setVendorPlanName('free');
         }
       }
     } catch (err) {
-      console.error('Error loading checkout setup context:', err);
+      console.error(
+        'Error loading checkout setup context:',
+        err
+      );
     } finally {
       setLoading(false);
     }
   }
 
   async function handleCreateProfile() {
-    if (!customerName.trim() || !phone.trim()) {
-      Alert.alert('Missing Fields', 'Please enter your full name and phone number.');
+    if (
+      !customerName.trim() ||
+      !phone.trim()
+    ) {
+      Alert.alert(
+        'Missing Fields',
+        'Please enter your full name and phone number.'
+      );
+
       return;
     }
+
     if (!authUserId) return;
 
     try {
       setCreatingProfile(true);
-      const { data, error } = await supabase
+
+      const {
+        data,
+        error,
+      } = await supabase
         .from('customers')
         .insert({
           auth_user_id: authUserId,
-          customer_name: customerName.trim(),
+          customer_name:
+            customerName.trim(),
           phone: phone.trim(),
         })
         .select()
@@ -399,9 +644,17 @@ export default function CheckoutScreen() {
 
       if (!error && data) {
         setCustomerId(data.id);
-        Alert.alert('Success 🎉', 'Profile linked successfully!');
+
+        Alert.alert(
+          'Success 🎉',
+          'Profile linked successfully!'
+        );
       } else {
-        Alert.alert('Error', error?.message || 'Could not instantiate your customer profile card.');
+        Alert.alert(
+          'Error',
+          error?.message ||
+            'Could not instantiate your customer profile card.'
+        );
       }
     } catch (err) {
       console.error(err);
@@ -410,30 +663,60 @@ export default function CheckoutScreen() {
     }
   }
 
-  const updateFormField = (key: keyof SavedAddress, val: string) => {
-    setFormAddress((prev) => ({ ...prev, [key]: val }));
+  const updateFormField = (
+    key: keyof SavedAddress,
+    val: string
+  ) => {
+    setFormAddress(prev => ({
+      ...prev,
+      [key]: val,
+    }));
   };
 
   const validateForm = () => {
-    if (!formAddress.address_line1.trim() || !formAddress.city.trim() || !formAddress.pin_code.trim()) {
-      Alert.alert('Missing Fields', 'Please complete the line 1, city, and pincode fields.');
+    if (
+      !formAddress.address_line1.trim() ||
+      !formAddress.city.trim() ||
+      !formAddress.pin_code.trim()
+    ) {
+      Alert.alert(
+        'Missing Fields',
+        'Please complete the line 1, city, and pincode fields.'
+      );
+
       return false;
     }
+
     return true;
   };
 
-  const handleAddressResolution = async (saveToDb: boolean) => {
-    if (!validateForm() || !customerId) return;
+  const handleAddressResolution = async (
+    saveToDb: boolean
+  ) => {
+    if (
+      !validateForm() ||
+      !customerId
+    ) {
+      return;
+    }
 
     if (saveToDb) {
       try {
         await supabase
           .from('customer_addresses')
-          .update({ is_default: false })
-          .eq('customer_id', customerId);
+          .update({
+            is_default: false,
+          })
+          .eq(
+            'customer_id',
+            customerId
+          );
 
-        const { data: newAddress, error } = await supabase
-          .from("customer_addresses")
+        const {
+          data: newAddress,
+          error,
+        } = await supabase
+          .from('customer_addresses')
           .insert({
             customer_id: customerId,
             is_default: true,
@@ -445,82 +728,155 @@ export default function CheckoutScreen() {
         if (!error && newAddress) {
           setAddress(newAddress);
         } else {
-          setAddress({ ...formAddress });
+          setAddress({
+            ...formAddress,
+          });
         }
       } catch (err) {
-        console.error('Error recording default address mapping node:', err);
-        setAddress({ ...formAddress });
+        console.error(
+          'Error recording default address mapping node:',
+          err
+        );
+
+        setAddress({
+          ...formAddress,
+        });
       }
     } else {
-      setAddress({ ...formAddress });
+      setAddress({
+        ...formAddress,
+      });
     }
 
     setShowAddressForm(false);
   };
 
-  const handleAppSelection = async (appId: OnlineAppType) => {
+  const handleAppSelection = async (
+    appId: OnlineAppType
+  ) => {
     setSelectedOnlineApp(appId);
 
-    const appConfig = PAYMENT_APPS.find((app) => app.id === appId);
+    const appConfig =
+      PAYMENT_APPS.find(
+        app => app.id === appId
+      );
+
     if (!appConfig) return;
 
-    const targetUpiId = vendorUpiId || 'atharvavedpanditrao-1@okicici';
-    const targetShopName = vendorShopName || 'Merchant Partner';
-    const amountValue = checkoutCharges.grandTotal.toString();
+    const targetUpiId =
+      vendorUpiId ||
+      'atharvavedpanditrao-1@okicici';
 
-    const queryParams = `pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(targetShopName)}&am=${encodeURIComponent(amountValue)}&cu=${encodeURIComponent('INR')}&tn=${encodeURIComponent(preGeneratedOrderNumber)}`;
-    
+    const targetShopName =
+      vendorShopName ||
+      'Merchant Partner';
+
+    const amountValue =
+      checkoutCharges.grandTotal.toString();
+
+    const queryParams =
+      `pa=${encodeURIComponent(targetUpiId)}` +
+      `&pn=${encodeURIComponent(targetShopName)}` +
+      `&am=${encodeURIComponent(amountValue)}` +
+      `&cu=${encodeURIComponent('INR')}` +
+      `&tn=${encodeURIComponent(preGeneratedOrderNumber)}`;
+
     let targetUri = '';
+
     if (appId === 'other') {
-      targetUri = `upi://pay?${queryParams}`;
+      targetUri =
+        `upi://pay?${queryParams}`;
     } else {
-      targetUri = `${appConfig.scheme}?${queryParams}`;
+      targetUri =
+        `${appConfig.scheme}?${queryParams}`;
     }
 
-    console.log("Launching UPI Scheme:", targetUri);
+    console.log(
+      'Launching UPI Scheme:',
+      targetUri
+    );
 
     try {
       if (appId === 'other') {
-        const canOpen = await Linking.canOpenURL(targetUri);
+        const canOpen =
+          await Linking.canOpenURL(
+            targetUri
+          );
+
         if (canOpen) {
-          await Linking.openURL(targetUri);
+          await Linking.openURL(
+            targetUri
+          );
+
           setPaymentSubmitted(true);
           placeOrder();
         } else {
-          setMissingAppModal({ visible: true, appName: 'No UPI Apps found' });
+          setMissingAppModal({
+            visible: true,
+            appName:
+              'No UPI Apps found',
+          });
         }
       } else {
-        const canOpen = await Linking.canOpenURL(targetUri);
+        const canOpen =
+          await Linking.canOpenURL(
+            targetUri
+          );
+
         if (canOpen) {
-          await Linking.openURL(targetUri);
+          await Linking.openURL(
+            targetUri
+          );
+
           setPaymentSubmitted(true);
           placeOrder();
         } else {
-          setMissingAppModal({ visible: true, appName: appConfig.name });
+          setMissingAppModal({
+            visible: true,
+            appName: appConfig.name,
+          });
         }
       }
     } catch (error) {
-      console.error('App launch error:', error);
-      setMissingAppModal({ visible: true, appName: appConfig.name });
+      console.error(
+        'App launch error:',
+        error
+      );
+
+      setMissingAppModal({
+        visible: true,
+        appName: appConfig.name,
+      });
     }
   };
 
-  // Action function to copy the OTP value to device clipboard node structures securely
   function handleCopyOtp() {
-    const currentOtp = successOrderDetails?.otp;
+    const currentOtp =
+      successOrderDetails?.otp;
+
     if (currentOtp) {
       Clipboard.setString(currentOtp);
-      Alert.alert("Success", "OTP copied successfully.");
+
+      Alert.alert(
+        'Success',
+        'OTP copied successfully.'
+      );
     }
   }
 
   const handleMainButtonPress = () => {
     if (paymentMethod === 'online') {
       if (!selectedOnlineApp) {
-        Alert.alert("Please select a payment app.");
+        Alert.alert(
+          'Please select a payment app.'
+        );
+
         return;
       }
-      handleAppSelection(selectedOnlineApp);
+
+      handleAppSelection(
+        selectedOnlineApp
+      );
     } else {
       placeOrder();
     }
@@ -529,100 +885,228 @@ export default function CheckoutScreen() {
   async function placeOrder() {
     if (isPlacingOrder) return;
 
-    if (paymentMethod === 'online' && !selectedOnlineApp) {
-      Alert.alert("Please select a payment app.");
+    if (
+      paymentMethod === 'online' &&
+      !selectedOnlineApp
+    ) {
+      Alert.alert(
+        'Please select a payment app.'
+      );
+
       return;
     }
 
     try {
       setIsPlacingOrder(true);
 
-      const { data: userData } = await supabase.auth.getUser();
+      const {
+        data: userData,
+      } = await supabase.auth.getUser();
+
       if (!userData.user?.id) {
-        Alert.alert('Session Error', 'No active user session detected by the client instance.');
+        Alert.alert(
+          'Session Error',
+          'No active user session detected by the client instance.'
+        );
+
         return;
       }
 
-      const { data: testCustomer, error: testCustomerErr } = await supabase
-        .from("customers")
-        .select("id")
-        .eq("auth_user_id", userData.user.id)
+      const {
+        data: testCustomer,
+        error: testCustomerErr,
+      } = await supabase
+        .from('customers')
+        .select('id')
+        .eq(
+          'auth_user_id',
+          userData.user.id
+        )
         .single();
 
-      if (testCustomerErr || !testCustomer) {
-        Alert.alert('Profile Resolution Failure', 'Could not locate a row in customers matching this user UID.');
+      if (
+        testCustomerErr ||
+        !testCustomer
+      ) {
+        Alert.alert(
+          'Profile Resolution Failure',
+          'Could not locate a row in customers matching this user UID.'
+        );
+
         return;
       }
 
       if (!address) {
-        Alert.alert('Error', 'Missing verified checkout destination address details.');
+        Alert.alert(
+          'Error',
+          'Missing verified checkout destination address details.'
+        );
+
         return;
       }
 
       if (!cart.length) {
-        Alert.alert('Cart Empty', 'Please add products before checkout');
+        Alert.alert(
+          'Cart Empty',
+          'Please add products before checkout'
+        );
+
         return;
       }
 
-      let activeAddress: SavedAddress | null = address;
+      let activeAddress:
+        | SavedAddress
+        | null = address;
 
       if (!activeAddress?.id) {
-        const { data: freshAddress, error: freshAddressErr } = await supabase
-          .from("customer_addresses")
-          .select("id,address_line1,address_line2,landmark,city,state,pin_code,latitude,longitude")
-          .eq("customer_id", testCustomer.id)
-          .eq("is_default", true)
+        const {
+          data: freshAddress,
+          error: freshAddressErr,
+        } = await supabase
+          .from(
+            'customer_addresses'
+          )
+          .select(
+            'id,address_line1,address_line2,landmark,city,state,pin_code,latitude,longitude'
+          )
+          .eq(
+            'customer_id',
+            testCustomer.id
+          )
+          .eq(
+            'is_default',
+            true
+          )
           .maybeSingle();
 
-        if (!freshAddressErr && freshAddress) {
-          activeAddress = freshAddress;
-          setAddress(freshAddress);
+        if (
+          !freshAddressErr &&
+          freshAddress
+        ) {
+          activeAddress =
+            freshAddress;
+
+          setAddress(
+            freshAddress
+          );
         }
       }
 
       if (!activeAddress?.id) {
-        Alert.alert('Error', 'Unable to determine your delivery address. Please edit and save your address again.');
+        Alert.alert(
+          'Error',
+          'Unable to determine your delivery address. Please edit and save your address again.'
+        );
+
         return;
       }
 
-      const vendorId = cart[0].vendor_id;
-      
-      // Generate a random 6-digit numeric OTP and save to orders.delivery_code
-      const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      const vendorId =
+        cart[0].vendor_id;
 
-      console.log("Address State:", address);
-      console.log("Database Address:", activeAddress);
-      console.log("Address ID:", activeAddress.id);
+      // Generate a random 6-digit numeric OTP.
+      const randomOtp =
+        Math.floor(
+          100000 +
+            Math.random() *
+              900000
+        ).toString();
 
-      const isOnline = paymentMethod === 'online';
+      console.log(
+        'Address State:',
+        address
+      );
+
+      console.log(
+        'Database Address:',
+        activeAddress
+      );
+
+      console.log(
+        'Address ID:',
+        activeAddress.id
+      );
+
+      const isOnline =
+        paymentMethod === 'online';
 
       const orderPayload = {
-        order_number: preGeneratedOrderNumber,
-        customer_id: testCustomer.id,
-        customer_auth_id: userData.user.id,
-        customer_address_id: activeAddress.id,
-        vendor_id: vendorId,
-        subtotal: checkoutCharges.itemsTotal,
-        delivery_fee: checkoutCharges.deliveryFee,
-        platform_fee: checkoutCharges.platformFee,
-        total_amount: checkoutCharges.grandTotal,
-        payment_status: isOnline ? 'pending_verification' : 'pending',
-        order_status: isOnline ? 'payment_verification' : 'pending',
-        actual_distance_km: distance || 0,
-        chargeable_distance_km: checkoutCharges.chargeableDistanceKm,
-        rider_earning: checkoutCharges.riderEarning,
-        rivo_delivery_margin: checkoutCharges.rivoDeliveryMargin,
-        vendor_commission: checkoutCharges.vendorCommission,
-        vendor_earning: checkoutCharges.vendorEarning,
+        order_number:
+          preGeneratedOrderNumber,
+
+        customer_id:
+          testCustomer.id,
+
+        customer_auth_id:
+          userData.user.id,
+
+        customer_address_id:
+          activeAddress.id,
+
+        vendor_id:
+          vendorId,
+
+        subtotal:
+          checkoutCharges.itemsTotal,
+
+        delivery_fee:
+          checkoutCharges.deliveryFee,
+
+        // Fixed ₹6 platform fee.
+        platform_fee:
+          checkoutCharges.platformFee,
+
+        total_amount:
+          checkoutCharges.grandTotal,
+
+        payment_status:
+          isOnline
+            ? 'pending_verification'
+            : 'pending',
+
+        order_status:
+          isOnline
+            ? 'payment_verification'
+            : 'pending',
+
+        actual_distance_km:
+          distance || 0,
+
+        chargeable_distance_km:
+          checkoutCharges.chargeableDistanceKm,
+
+        rider_earning:
+          checkoutCharges.riderEarning,
+
+        rivo_delivery_margin:
+          checkoutCharges.rivoDeliveryMargin,
+
+        vendor_commission:
+          checkoutCharges.vendorCommission,
+
+        vendor_earning:
+          checkoutCharges.vendorEarning,
+
         settled_vendor: false,
+
         settled_rider: false,
-        payment_method: paymentMethod,
-        delivery_code: randomOtp,
+
+        payment_method:
+          paymentMethod,
+
+        delivery_code:
+          randomOtp,
       };
 
-      console.log("ORDER PAYLOAD", orderPayload);
+      console.log(
+        'ORDER PAYLOAD',
+        orderPayload
+      );
 
-      const { data: orderData, error: orderError } = await supabase
+      const {
+        data: orderData,
+        error: orderError,
+      } = await supabase
         .from('orders')
         .insert(orderPayload)
         .select()
@@ -630,81 +1114,179 @@ export default function CheckoutScreen() {
 
       if (orderError) {
         Alert.alert(
-          "Order creation failed",
-          `Code: ${orderError.code || 'N/A'}\nMessage: ${orderError.message || 'N/A'}`
+          'Order creation failed',
+          `Code: ${
+            orderError.code || 'N/A'
+          }\nMessage: ${
+            orderError.message ||
+            'N/A'
+          }`
         );
+
         return;
       }
 
-      console.log("Inserted Order:", orderData);
+      console.log(
+        'Inserted Order:',
+        orderData
+      );
 
-      const { data: verifyOrder } = await supabase
-        .from("orders")
-        .select("id, customer_address_id")
-        .eq("id", orderData.id)
+      const {
+        data: verifyOrder,
+      } = await supabase
+        .from('orders')
+        .select(
+          'id, customer_address_id'
+        )
+        .eq(
+          'id',
+          orderData.id
+        )
         .single();
 
-      console.log("Verification:", verifyOrder);
+      console.log(
+        'Verification:',
+        verifyOrder
+      );
 
-      if (verifyOrder?.customer_address_id == null) {
-        Alert.alert("Error", "Order created without delivery address. Checkout aborted.");
+      if (
+        verifyOrder?.customer_address_id ==
+        null
+      ) {
+        Alert.alert(
+          'Error',
+          'Order created without delivery address. Checkout aborted.'
+        );
+
         return;
       }
 
-      // Automatically generate a matching record inside the payments table
+      /*
+       * PAYMENT RECORD
+       */
       const paymentPayload: any = {
-        order_id: orderData.id,
-        amount: checkoutCharges.grandTotal,
-        payment_method: paymentMethod === 'cod' ? 'COD' : 'ONLINE',
-        payment_status: 'pending',
+        order_id:
+          orderData.id,
+
+        amount:
+          checkoutCharges.grandTotal,
+
+        payment_method:
+          paymentMethod === 'cod'
+            ? 'COD'
+            : 'ONLINE',
+
+        payment_status:
+          'pending',
       };
 
-      const { error: paymentError } = await supabase
+      const {
+        error: paymentError,
+      } = await supabase
         .from('payments')
-        .insert(paymentPayload);
+        .insert(
+          paymentPayload
+        );
 
       if (paymentError) {
-        console.error('Payment entry instantiation failed:', paymentError);
-        Alert.alert('Database Error', 'Could not record the global payment transaction tracking data row.');
+        console.error(
+          'Payment entry instantiation failed:',
+          paymentError
+        );
+
+        Alert.alert(
+          'Database Error',
+          'Could not record the global payment transaction tracking data row.'
+        );
       }
 
+      /*
+       * ORDER ITEMS
+       */
       for (const item of cart) {
-        await supabase.from('order_items').insert({
-          order_id: orderData.id,
-          product_id: item.id,
-          quantity: item.quantity,
-          unit_price: item.price,
-          total_price: item.price * item.quantity,
-          gst_rate: item.gst_rate ?? 0,
-        });
+        await supabase
+          .from('order_items')
+          .insert({
+            order_id:
+              orderData.id,
+
+            product_id:
+              item.id,
+
+            quantity:
+              item.quantity,
+
+            unit_price:
+              item.price,
+
+            total_price:
+              item.price *
+              item.quantity,
+
+            gst_rate:
+              item.gst_rate ?? 0,
+          });
       }
 
       clearCart();
 
       setSuccessOrderDetails({
-        orderId: orderData.id,
-        orderNumber: preGeneratedOrderNumber,
-        totalAmount: checkoutCharges.grandTotal,
-        eta: '5-15 mins',
-        paymentMethod: paymentMethod,
-        otp: randomOtp,
+        orderId:
+          orderData.id,
+
+        orderNumber:
+          preGeneratedOrderNumber,
+
+        totalAmount:
+          checkoutCharges.grandTotal,
+
+        eta:
+          '5-15 mins',
+
+        paymentMethod:
+          paymentMethod,
+
+        otp:
+          randomOtp,
       });
     } catch (error) {
-      console.error('Error placing order:', error);
-      Alert.alert('Error', JSON.stringify(error));
+      console.error(
+        'Error placing order:',
+        error
+      );
+
+      Alert.alert(
+        'Error',
+        JSON.stringify(error)
+      );
     } finally {
       setIsPlacingOrder(false);
     }
   }
 
-  const isCoordinatesMissing = 
-    (address !== null && (address.latitude == null || address.longitude == null)) ||
-    (cart.length > 0 && (!vendorLocation || vendorLocation.latitude == null || vendorLocation.longitude == null));
+  const isCoordinatesMissing =
+    (address !== null &&
+      (address.latitude == null ||
+        address.longitude == null)) ||
+    (cart.length > 0 &&
+      (!vendorLocation ||
+        vendorLocation.latitude == null ||
+        vendorLocation.longitude == null));
 
-  if (loading || isCoordinatesMissing) {
+  if (
+    loading ||
+    isCoordinatesMissing
+  ) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10B981" />
+      <View
+        style={
+          styles.loadingContainer
+        }
+      >
+        <ActivityIndicator
+          size="large"
+          color="#10B981"
+        />
       </View>
     );
   }
@@ -712,26 +1294,83 @@ export default function CheckoutScreen() {
   return (
     <View style={styles.mainWrapper}>
       <View style={styles.topNavBar}>
-        <Pressable onPress={() => router.back()} style={styles.backButtonIcon}>
-          <Text style={styles.backButtonTextSymbol}>←</Text>
+        <Pressable
+          onPress={() =>
+            router.back()
+          }
+          style={
+            styles.backButtonIcon
+          }
+        >
+          <Text
+            style={
+              styles.backButtonTextSymbol
+            }
+          >
+            ←
+          </Text>
         </Pressable>
-        <Text style={styles.navTitle}>Checkout</Text>
+
+        <Text style={styles.navTitle}>
+          Checkout
+        </Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={
+          styles.container
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
+      >
         {!customerId && (
-          <View style={[styles.card, { borderColor: '#F59E0B', backgroundColor: '#FFFDF5' }]}>
-            <Text style={[styles.sectionHeader, { color: '#D97706' }]}>👤 Link Delivery Profile</Text>
-            <Text style={{ fontSize: 13, color: '#64748B', marginBottom: 12, fontWeight: '500' }}>
-              Your account doesn't have a delivery profile yet. Add your info to activate quick checkout.
+          <View
+            style={[
+              styles.card,
+              {
+                borderColor:
+                  '#F59E0B',
+                backgroundColor:
+                  '#FFFDF5',
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.sectionHeader,
+                {
+                  color:
+                    '#D97706',
+                },
+              ]}
+            >
+              👤 Link Delivery Profile
             </Text>
+
+            <Text
+              style={{
+                fontSize: 13,
+                color: '#64748B',
+                marginBottom: 12,
+                fontWeight: '500',
+              }}
+            >
+              Your account doesn't have a
+              delivery profile yet. Add your
+              info to activate quick checkout.
+            </Text>
+
             <TextInput
               placeholder="Your Full Name *"
               placeholderTextColor="#94A3B8"
               value={customerName}
-              onChangeText={setCustomerName}
+              onChangeText={
+                setCustomerName
+              }
               style={styles.input}
             />
+
             <TextInput
               placeholder="Mobile Phone Number *"
               placeholderTextColor="#94A3B8"
@@ -740,441 +1379,1365 @@ export default function CheckoutScreen() {
               onChangeText={setPhone}
               style={styles.input}
             />
-            <Pressable 
-              onPress={handleCreateProfile} 
-              disabled={creatingProfile}
+
+            <Pressable
+              onPress={
+                handleCreateProfile
+              }
+              disabled={
+                creatingProfile
+              }
               style={({ pressed }) => [
                 {
-                  backgroundColor: '#D97706',
+                  backgroundColor:
+                    '#D97706',
                   borderRadius: 12,
                   paddingVertical: 12,
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  alignItems:
+                    'center',
+                  justifyContent:
+                    'center',
                   marginTop: 12,
                 },
-                pressed && styles.microInteractionState
+                pressed &&
+                  styles.microInteractionState,
               ]}
             >
               {creatingProfile ? (
-                <ActivityIndicator color="#FFF" size="small" />
+                <ActivityIndicator
+                  color="#FFF"
+                  size="small"
+                />
               ) : (
-                <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '800' }}>Create & Continue</Text>
+                <Text
+                  style={{
+                    color:
+                      '#FFFFFF',
+                    fontSize: 14,
+                    fontWeight:
+                      '800',
+                  }}
+                >
+                  Create & Continue
+                </Text>
               )}
             </Pressable>
           </View>
         )}
 
-        <View style={styles.etaCard}>
-          <View style={styles.etaIconWrapper}>
-            <Text style={styles.etaIcon}>⚡</Text>
+        <View
+          style={styles.etaCard}
+        >
+          <View
+            style={
+              styles.etaIconWrapper
+            }
+          >
+            <Text
+              style={styles.etaIcon}
+            >
+              ⚡
+            </Text>
           </View>
-          <View style={styles.etaTextContent}>
-            <Text style={styles.etaTitle}>Instant Delivery to your location</Text>
-            <Text style={styles.etaTime}>Arriving in 5 - 15 Mins</Text>
+
+          <View
+            style={
+              styles.etaTextContent
+            }
+          >
+            <Text
+              style={styles.etaTitle}
+            >
+              Instant Delivery to your location
+            </Text>
+
+            <Text
+              style={styles.etaTime}
+            >
+              Arriving in 5 - 15 Mins
+            </Text>
           </View>
+
           {distance !== null && (
-            <View style={styles.distanceTag}>
-              <Text style={styles.distanceTagText}>{distance.toFixed(1)} km</Text>
+            <View
+              style={
+                styles.distanceTag
+              }
+            >
+              <Text
+                style={
+                  styles.distanceTagText
+                }
+              >
+                {distance.toFixed(
+                  1
+                )}{' '}
+                km
+              </Text>
             </View>
           )}
         </View>
 
+        {/* DELIVERY ADDRESS */}
         <View style={styles.card}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionHeader}>🎒 Delivery Address</Text>
+          <View
+            style={
+              styles.sectionHeaderRow
+            }
+          >
+            <Text
+              style={
+                styles.sectionHeader
+              }
+            >
+              🎒 Delivery Address
+            </Text>
           </View>
-          
-          {address && !showAddressForm ? (
-            <View style={styles.addressInfoBox}>
-              <Text style={styles.addressText}>{address.address_line1}</Text>
-              {!!address.address_line2 && <Text style={styles.addressText}>{address.address_line2}</Text>}
-              {!!address.landmark && (
-                <View style={styles.landmarkWrapper}>
-                  <Text style={styles.addressSubtext}>📍 Landmark: {address.landmark}</Text>
-                </View>
-              )}
-              <Text style={styles.addressCityText}>
-                {address.city}, {address.state} - {address.pin_code}
+
+          {address &&
+          !showAddressForm ? (
+            <View
+              style={
+                styles.addressInfoBox
+              }
+            >
+              <Text
+                style={
+                  styles.addressText
+                }
+              >
+                {address.address_line1}
               </Text>
 
-              <Pressable style={styles.changeAddressBtn} onPress={() => setShowAddressForm(true)}>
-                <Text style={styles.changeAddressBtnText}>Edit Address Details</Text>
+              {!!address.address_line2 && (
+                <Text
+                  style={
+                    styles.addressText
+                  }
+                >
+                  {address.address_line2}
+                </Text>
+              )}
+
+              {!!address.landmark && (
+                <View
+                  style={
+                    styles.landmarkWrapper
+                  }
+                >
+                  <Text
+                    style={
+                      styles.addressSubtext
+                    }
+                  >
+                    📍 Landmark:{' '}
+                    {
+                      address.landmark
+                    }
+                  </Text>
+                </View>
+              )}
+
+              <Text
+                style={
+                  styles.addressCityText
+                }
+              >
+                {address.city},{' '}
+                {address.state} -{' '}
+                {address.pin_code}
+              </Text>
+
+              <Pressable
+                style={
+                  styles.changeAddressBtn
+                }
+                onPress={() =>
+                  setShowAddressForm(
+                    true
+                  )
+                }
+              >
+                <Text
+                  style={
+                    styles.changeAddressBtnText
+                  }
+                >
+                  Edit Address Details
+                </Text>
               </Pressable>
             </View>
           ) : !showAddressForm ? (
-            <View style={styles.addressEmptyState}>
-              <Text style={styles.errorText}>No shipping destination configured.</Text>
-              <Pressable 
-                disabled={!customerId} 
-                style={[styles.primaryButton, !customerId && { backgroundColor: '#CBD5E1' }]} 
-                onPress={() => setShowAddressForm(true)}
+            <View
+              style={
+                styles.addressEmptyState
+              }
+            >
+              <Text
+                style={
+                  styles.errorText
+                }
               >
-                <Text style={styles.primaryButtonText}>Add New Address</Text>
+                No shipping destination
+                configured.
+              </Text>
+
+              <Pressable
+                disabled={
+                  !customerId
+                }
+                style={[
+                  styles.primaryButton,
+                  !customerId && {
+                    backgroundColor:
+                      '#CBD5E1',
+                  },
+                ]}
+                onPress={() =>
+                  setShowAddressForm(
+                    true
+                  )
+                }
+              >
+                <Text
+                  style={
+                    styles.primaryButtonText
+                  }
+                >
+                  Add New Address
+                </Text>
               </Pressable>
             </View>
           ) : null}
 
           {showAddressForm && (
-            <View style={styles.addressFormFields}>
+            <View
+              style={
+                styles.addressFormFields
+              }
+            >
               <TextInput
                 placeholder="Address Line 1 *"
                 placeholderTextColor="#94A3B8"
-                value={formAddress.address_line1}
-                onChangeText={(t) => updateFormField('address_line1', t)}
+                value={
+                  formAddress.address_line1
+                }
+                onChangeText={t =>
+                  updateFormField(
+                    'address_line1',
+                    t
+                  )
+                }
                 style={styles.input}
               />
+
               <TextInput
                 placeholder="Address Line 2"
                 placeholderTextColor="#94A3B8"
-                value={formAddress.address_line2}
-                onChangeText={(t) => updateFormField('address_line2', t)}
+                value={
+                  formAddress.address_line2
+                }
+                onChangeText={t =>
+                  updateFormField(
+                    'address_line2',
+                    t
+                  )
+                }
                 style={styles.input}
               />
+
               <TextInput
                 placeholder="Landmark"
                 placeholderTextColor="#94A3B8"
-                value={formAddress.landmark}
-                onChangeText={(t) => updateFormField('landmark', t)}
+                value={
+                  formAddress.landmark
+                }
+                onChangeText={t =>
+                  updateFormField(
+                    'landmark',
+                    t
+                  )
+                }
                 style={styles.input}
               />
-              <View style={styles.row}>
+
+              <View
+                style={styles.row}
+              >
                 <TextInput
                   placeholder="City *"
                   placeholderTextColor="#94A3B8"
-                  value={formAddress.city}
-                  onChangeText={(t) => updateFormField('city', t)}
-                  style={[styles.input, { flex: 1, marginRight: 8 }]}
+                  value={
+                    formAddress.city
+                  }
+                  onChangeText={t =>
+                    updateFormField(
+                      'city',
+                      t
+                    )
+                  }
+                  style={[
+                    styles.input,
+                    {
+                      flex: 1,
+                      marginRight: 8,
+                    },
+                  ]}
                 />
+
                 <TextInput
                   placeholder="State"
                   placeholderTextColor="#94A3B8"
-                  value={formAddress.state}
-                  onChangeText={(t) => updateFormField('state', t)}
-                  style={[styles.input, { flex: 1 }]}
+                  value={
+                    formAddress.state
+                  }
+                  onChangeText={t =>
+                    updateFormField(
+                      'state',
+                      t
+                    )
+                  }
+                  style={[
+                    styles.input,
+                    {
+                      flex: 1,
+                    },
+                  ]}
                 />
               </View>
+
               <TextInput
                 placeholder="Pin Code *"
                 placeholderTextColor="#94A3B8"
                 keyboardType="number-pad"
-                value={formAddress.pin_code}
-                onChangeText={(t) => updateFormField('pin_code', t)}
+                value={
+                  formAddress.pin_code
+                }
+                onChangeText={t =>
+                  updateFormField(
+                    'pin_code',
+                    t
+                  )
+                }
                 style={styles.input}
               />
 
-              <Text style={styles.promptLabel}>Save this address for future checkouts?</Text>
-              <View style={styles.row}>
+              <Text
+                style={
+                  styles.promptLabel
+                }
+              >
+                Save this address for future
+                checkouts?
+              </Text>
+
+              <View
+                style={styles.row}
+              >
                 <Pressable
-                  style={[styles.actionChip, { backgroundColor: '#10B981', marginRight: 8 }]}
-                  onPress={() => handleAddressResolution(true)}
+                  style={[
+                    styles.actionChip,
+                    {
+                      backgroundColor:
+                        '#10B981',
+                      marginRight: 8,
+                    },
+                  ]}
+                  onPress={() =>
+                    handleAddressResolution(
+                      true
+                    )
+                  }
                 >
-                  <Text style={styles.actionChipText}>Save Default</Text>
+                  <Text
+                    style={
+                      styles.actionChipText
+                    }
+                  >
+                    Save Default
+                  </Text>
                 </Pressable>
+
                 <Pressable
-                  style={[styles.actionChip, { backgroundColor: '#64748B' }]}
-                  onPress={() => handleAddressResolution(false)}
+                  style={[
+                    styles.actionChip,
+                    {
+                      backgroundColor:
+                        '#64748B',
+                    },
+                  ]}
+                  onPress={() =>
+                    handleAddressResolution(
+                      false
+                    )
+                  }
                 >
-                  <Text style={styles.actionChipText}>Use Once</Text>
+                  <Text
+                    style={
+                      styles.actionChipText
+                    }
+                  >
+                    Use Once
+                  </Text>
                 </Pressable>
               </View>
             </View>
           )}
         </View>
 
+        {/* ORDER SUMMARY */}
         <View style={styles.card}>
-          <Text style={styles.sectionHeader}>📦 Order Summary ({cart.length} items)</Text>
-          <View style={styles.summaryListBlock}>
-            {cart.map((item, index) => (
-              <View key={item.id || index} style={[styles.row, styles.summaryItemRow]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.itemName}>{item.name}</Text>
-                  <Text style={styles.itemQuantity}>Quantity: {item.quantity}</Text>
-                </View>
-                <Text style={styles.itemPrice}>₹{item.price * item.quantity}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.sectionHeader}>📑 Bill Details</Text>
-          <View style={[styles.row, styles.breakdownRow]}>
-            <Text style={styles.breakdownLabel}>Items Total</Text>
-            <Text style={styles.breakdownValue}>₹{checkoutCharges.itemsTotal}</Text>
-          </View>
-          <View style={[styles.row, styles.breakdownRow]}>
-            <Text style={styles.breakdownLabel}>Delivery Fee</Text>
-            <Text style={styles.breakdownValue}>₹{checkoutCharges.deliveryFee}</Text>
-          </View>
-          <View style={[styles.row, styles.breakdownRow]}>
-            <Text style={styles.breakdownLabel}>Platform Fee</Text>
-            <Text style={styles.breakdownValue}>₹{checkoutCharges.platformFee}</Text>
-          </View>
-          
-          <Text style={styles.gstNotice}>
-            Prices shown are inclusive of applicable GST.
+          <Text
+            style={styles.sectionHeader}
+          >
+            📦 Order Summary ({cart.length}{' '}
+            items)
           </Text>
 
-          <View style={[styles.row, styles.grandTotalRow]}>
-            <Text style={styles.grandTotalLabel}>Grand Total</Text>
-            <Text style={styles.grandTotalValue}>₹{checkoutCharges.itemsTotal + checkoutCharges.deliveryFee + checkoutCharges.platformFee}</Text>
+          <View
+            style={
+              styles.summaryListBlock
+            }
+          >
+            {cart.map(
+              (item, index) => (
+                <View
+                  key={
+                    item.id ||
+                    index
+                  }
+                  style={[
+                    styles.row,
+                    styles.summaryItemRow,
+                  ]}
+                >
+                  <View
+                    style={{
+                      flex: 1,
+                    }}
+                  >
+                    <Text
+                      style={
+                        styles.itemName
+                      }
+                    >
+                      {item.name}
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.itemQuantity
+                      }
+                    >
+                      Quantity:{' '}
+                      {
+                        item.quantity
+                      }
+                    </Text>
+                  </View>
+
+                  <Text
+                    style={
+                      styles.itemPrice
+                    }
+                  >
+                    ₹
+                    {item.price *
+                      item.quantity}
+                  </Text>
+                </View>
+              )
+            )}
           </View>
         </View>
 
-        {/* Payment Methods */}
+        {/* BILL DETAILS */}
         <View style={styles.card}>
-          <Text style={styles.sectionHeader}>🎒 Payment Method</Text>
+          <Text
+            style={styles.sectionHeader}
+          >
+            📑 Bill Details
+          </Text>
 
-          {/* Informational Notice Box for Online Payments */}
-          <View style={styles.noticeCardContainer}>
-            <Text style={styles.noticeCardIcon}>🚧</Text>
-            <View style={styles.noticeCardTextWrapper}>
-              <Text style={styles.noticeCardTitle}>Online Payments Coming Soon</Text>
-              <Text style={styles.noticeCardBody}>
-                We are currently improving our online payment experience. For now, please choose Cash on Delivery. You can also pay online directly to the rider at the time of delivery if required.
+          <View
+            style={[
+              styles.row,
+              styles.breakdownRow,
+            ]}
+          >
+            <Text
+              style={
+                styles.breakdownLabel
+              }
+            >
+              Items Total
+            </Text>
+
+            <Text
+              style={
+                styles.breakdownValue
+              }
+            >
+              ₹
+              {
+                checkoutCharges.itemsTotal
+              }
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.row,
+              styles.breakdownRow,
+            ]}
+          >
+            <Text
+              style={
+                styles.breakdownLabel
+              }
+            >
+              Delivery Fee
+            </Text>
+
+            <Text
+              style={
+                styles.breakdownValue
+              }
+            >
+              ₹
+              {
+                checkoutCharges.deliveryFee
+              }
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.row,
+              styles.breakdownRow,
+            ]}
+          >
+            <Text
+              style={
+                styles.breakdownLabel
+              }
+            >
+              Platform Fee
+            </Text>
+
+            <Text
+              style={
+                styles.breakdownValue
+              }
+            >
+              ₹
+              {
+                checkoutCharges.platformFee
+              }
+            </Text>
+          </View>
+
+          <Text
+            style={styles.gstNotice}
+          >
+            Prices shown are inclusive of applicable
+            GST.
+          </Text>
+
+          <View
+            style={[
+              styles.row,
+              styles.grandTotalRow,
+            ]}
+          >
+            <Text
+              style={
+                styles.grandTotalLabel
+              }
+            >
+              Grand Total
+            </Text>
+
+            <Text
+              style={
+                styles.grandTotalValue
+              }
+            >
+              ₹
+              {
+                checkoutCharges.grandTotal
+              }
+            </Text>
+          </View>
+        </View>
+
+        {/* PAYMENT METHODS */}
+        <View style={styles.card}>
+          <Text
+            style={styles.sectionHeader}
+          >
+            🎒 Payment Method
+          </Text>
+
+          <View
+            style={
+              styles.noticeCardContainer
+            }
+          >
+            <Text
+              style={
+                styles.noticeCardIcon
+              }
+            >
+              🚧
+            </Text>
+
+            <View
+              style={
+                styles.noticeCardTextWrapper
+              }
+            >
+              <Text
+                style={
+                  styles.noticeCardTitle
+                }
+              >
+                Online Payments Coming Soon
+              </Text>
+
+              <Text
+                style={
+                  styles.noticeCardBody
+                }
+              >
+                We are currently improving our
+                online payment experience. For now,
+                please choose Cash on Delivery. You
+                can also pay online directly to the
+                rider at the time of delivery if
+                required.
               </Text>
             </View>
           </View>
-          
-          <Pressable 
+
+          <Pressable
             onPress={() => {
               setPaymentMethod('cod');
-              setPaymentSubmitted(false);
+              setPaymentSubmitted(
+                false
+              );
             }}
             style={({ pressed }) => [
-              styles.row, 
-              paymentMethod === 'cod' ? styles.paymentOptionSelected : styles.paymentOptionUnselected, 
-              { marginBottom: 12 },
-              pressed && styles.microInteractionState
+              styles.row,
+              paymentMethod === 'cod'
+                ? styles.paymentOptionSelected
+                : styles.paymentOptionUnselected,
+              {
+                marginBottom: 12,
+              },
+              pressed &&
+                styles.microInteractionState,
             ]}
           >
-            <View style={paymentMethod === 'cod' ? styles.radioFilled : styles.radioEmpty} />
-            <Text style={styles.paymentMethodNameText}>Cash on Delivery</Text>
+            <View
+              style={
+                paymentMethod === 'cod'
+                  ? styles.radioFilled
+                  : styles.radioEmpty
+              }
+            />
+
+            <Text
+              style={
+                styles.paymentMethodNameText
+              }
+            >
+              Cash on Delivery
+            </Text>
           </Pressable>
 
-          {/* Disabled Online Payment Row */}
-          <View 
+          <View
             style={[
-              styles.row, 
+              styles.row,
               styles.paymentOptionDisabled,
-              { justifyContent: 'space-between' }
+              {
+                justifyContent:
+                  'space-between',
+              },
             ]}
           >
-            <View style={styles.row}>
-              <View style={styles.radioDisabled} />
-              <Text style={styles.paymentMethodDisabledText}>Online Payment</Text>
+            <View
+              style={styles.row}
+            >
+              <View
+                style={
+                  styles.radioDisabled
+                }
+              />
+
+              <Text
+                style={
+                  styles.paymentMethodDisabledText
+                }
+              >
+                Online Payment
+              </Text>
             </View>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonBadgeText}>Coming Soon</Text>
+
+            <View
+              style={
+                styles.comingSoonBadge
+              }
+            >
+              <Text
+                style={
+                  styles.comingSoonBadgeText
+                }
+              >
+                Coming Soon
+              </Text>
             </View>
           </View>
 
-          {paymentMethod === 'online' && (
-            <View style={styles.modernAppsContainer}>
-              {PAYMENT_APPS.map((app) => {
-                const isSelected = selectedOnlineApp === app.id;
-                return (
-                  <Pressable
-                    key={app.id}
-                    onPress={() => handleAppSelection(app.id)}
-                    style={({ pressed }) => [
-                      styles.modernAppCard,
-                      isSelected && styles.modernAppCardSelected,
-                      pressed && styles.microInteractionState
-                    ]}
-                  >
-                    <View style={[styles.appIconCircle, { backgroundColor: app.bgColor }]}>
-                      <Text style={[styles.appIconInitial, { color: app.color }]}>{app.initial}</Text>
-                    </View>
-                    <View style={styles.appTextDetails}>
-                      <Text style={styles.appNameTitle}>{app.name}</Text>
-                      <Text style={styles.appSubtitleText}>{app.subtitle}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
+          {paymentMethod ===
+            'online' && (
+            <View
+              style={
+                styles.modernAppsContainer
+              }
+            >
+              {PAYMENT_APPS.map(
+                app => {
+                  const isSelected =
+                    selectedOnlineApp ===
+                    app.id;
+
+                  return (
+                    <Pressable
+                      key={
+                        app.id
+                      }
+                      onPress={() =>
+                        handleAppSelection(
+                          app.id
+                        )
+                      }
+                      style={({ pressed }) => [
+                        styles.modernAppCard,
+                        isSelected &&
+                          styles.modernAppCardSelected,
+                        pressed &&
+                          styles.microInteractionState,
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.appIconCircle,
+                          {
+                            backgroundColor:
+                              app.bgColor,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.appIconInitial,
+                            {
+                              color:
+                                app.color,
+                            },
+                          ]}
+                        >
+                          {app.initial}
+                        </Text>
+                      </View>
+
+                      <View
+                        style={
+                          styles.appTextDetails
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.appNameTitle
+                          }
+                        >
+                          {app.name}
+                        </Text>
+
+                        <Text
+                          style={
+                            styles.appSubtitleText
+                          }
+                        >
+                          {app.subtitle}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                }
+              )}
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* App Not Installed Dialog */}
+      {/* APP NOT INSTALLED MODAL */}
       <Modal
-        visible={missingAppModal.visible}
+        visible={
+          missingAppModal.visible
+        }
         transparent
         animationType="fade"
-        onRequestClose={() => setMissingAppModal({ visible: false, appName: '' })}
+        onRequestClose={() =>
+          setMissingAppModal({
+            visible: false,
+            appName: '',
+          })
+        }
       >
-        <View style={styles.missingAppOverlay}>
-          <View style={styles.missingAppCard}>
-            <Text style={styles.missingAppTitle}>{missingAppModal.appName} is not installed on this device.</Text>
-            <View style={styles.missingAppButtonRow}>
+        <View
+          style={
+            styles.missingAppOverlay
+          }
+        >
+          <View
+            style={
+              styles.missingAppCard
+            }
+          >
+            <Text
+              style={
+                styles.missingAppTitle
+              }
+            >
+              {
+                missingAppModal.appName
+              }{' '}
+              is not installed on this device.
+            </Text>
+
+            <View
+              style={
+                styles.missingAppButtonRow
+              }
+            >
               <Pressable
-                style={styles.missingAppCancelBtn}
-                onPress={() => setMissingAppModal({ visible: false, appName: '' })}
+                style={
+                  styles.missingAppCancelBtn
+                }
+                onPress={() =>
+                  setMissingAppModal({
+                    visible: false,
+                    appName: '',
+                  })
+                }
               >
-                <Text style={styles.missingAppCancelText}>Cancel</Text>
+                <Text
+                  style={
+                    styles.missingAppCancelText
+                  }
+                >
+                  Cancel
+                </Text>
               </Pressable>
+
               <Pressable
-                style={styles.missingAppChooseBtn}
-                onPress={() => setMissingAppModal({ visible: false, appName: '' })}
+                style={
+                  styles.missingAppChooseBtn
+                }
+                onPress={() =>
+                  setMissingAppModal({
+                    visible: false,
+                    appName: '',
+                  })
+                }
               >
-                <Text style={styles.missingAppChooseText}>Choose Another App</Text>
+                <Text
+                  style={
+                    styles.missingAppChooseText
+                  }
+                >
+                  Choose Another App
+                </Text>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Sticky Footer Panel */}
-      <View style={styles.stickyFooterPanel}>
-        <View style={styles.stickyFooterLeft}>
-          <Text style={styles.orderTotalTitleLabel}>Order Total</Text>
-          <Text style={styles.stickyTotalAmountText}>₹{checkoutCharges.grandTotal}</Text>
+      {/* STICKY FOOTER */}
+      <View
+        style={
+          styles.stickyFooterPanel
+        }
+      >
+        <View
+          style={
+            styles.stickyFooterLeft
+          }
+        >
+          <Text
+            style={
+              styles.orderTotalTitleLabel
+            }
+          >
+            Order Total
+          </Text>
+
+          <Text
+            style={
+              styles.stickyTotalAmountText
+            }
+          >
+            ₹
+            {
+              checkoutCharges.grandTotal
+            }
+          </Text>
         </View>
+
         <Pressable
-          onPress={handleMainButtonPress}
-          disabled={!address || isPlacingOrder || !customerId}
+          onPress={
+            handleMainButtonPress
+          }
+          disabled={
+            !address ||
+            isPlacingOrder ||
+            !customerId
+          }
           style={({ pressed }) => {
-            const styleArray: any[] = [styles.stickyOrderPlacementButton];
-            if (!address || isPlacingOrder || !customerId) styleArray.push(styles.disabledButton);
-            if (pressed && address && !isPlacingOrder && customerId) styleArray.push(styles.microInteractionState);
+            const styleArray: any[] =
+              [
+                styles.stickyOrderPlacementButton,
+              ];
+
+            if (
+              !address ||
+              isPlacingOrder ||
+              !customerId
+            ) {
+              styleArray.push(
+                styles.disabledButton
+              );
+            }
+
+            if (
+              pressed &&
+              address &&
+              !isPlacingOrder &&
+              customerId
+            ) {
+              styleArray.push(
+                styles.microInteractionState
+              );
+            }
+
             return styleArray;
           }}
         >
           {isPlacingOrder ? (
-            <ActivityIndicator color="#FFF" size="small" />
+            <ActivityIndicator
+              color="#FFF"
+              size="small"
+            />
           ) : (
-            <Text style={styles.stickyButtonText}>
-              {paymentMethod === 'cod' ? 'Place Order' : 'Pay Securely'}
+            <Text
+              style={
+                styles.stickyButtonText
+              }
+            >
+              {paymentMethod ===
+              'cod'
+                ? 'Place Order'
+                : 'Pay Securely'}
             </Text>
           )}
         </Pressable>
       </View>
 
+      {/* SUCCESS MODAL */}
       <Modal
-        visible={successOrderDetails !== null}
+        visible={
+          successOrderDetails !==
+          null
+        }
         animationType="none"
         transparent={true}
       >
-        <View style={styles.modalSystemOverlayBackground}>
-          <Animated.View 
+        <View
+          style={
+            styles.modalSystemOverlayBackground
+          }
+        >
+          <Animated.View
             style={[
               styles.successScreenCardContainer,
               {
-                opacity: fadeAnim,
-                transform: [{ scale: scaleAnim }]
-              }
+                opacity:
+                  fadeAnim,
+                transform: [
+                  {
+                    scale:
+                      scaleAnim,
+                  },
+                ],
+              },
             ]}
           >
-            <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
-              <Animated.View 
+            <ScrollView
+              style={{
+                width: '100%',
+              }}
+              contentContainerStyle={{
+                alignItems:
+                  'center',
+              }}
+              showsVerticalScrollIndicator={
+                false
+              }
+            >
+              <Animated.View
                 style={[
                   styles.successScreenBadgeCircle,
                   {
                     transform: [
                       {
-                        scale: checkmarkBounce.interpolate({
-                          inputRange: [0, 0.5, 0.8, 1],
-                          outputRange: [0.3, 1.2, 0.95, 1]
-                        })
-                      }
-                    ]
-                  }
+                        scale:
+                          checkmarkBounce.interpolate(
+                            {
+                              inputRange: [
+                                0,
+                                0.5,
+                                0.8,
+                                1,
+                              ],
+                              outputRange: [
+                                0.3,
+                                1.2,
+                                0.95,
+                                1,
+                              ],
+                            }
+                          ),
+                      },
+                    ],
+                  },
                 ]}
               >
-                <Text style={styles.successBadgeText}>✓</Text>
+                <Text
+                  style={
+                    styles.successBadgeText
+                  }
+                >
+                  ✓
+                </Text>
               </Animated.View>
 
-              <Text style={styles.successTitle}>Thank you for choosing Rivo ❤️</Text>
-              <Text style={styles.successSubtitle}>
-                See you again in {address?.city || 'your city'} 👋
+              <Text
+                style={
+                  styles.successTitle
+                }
+              >
+                Thank you for choosing Rivo ❤️
               </Text>
 
-              {successOrderDetails?.paymentMethod === 'online' && (
-                <View style={styles.verificationBanner}>
-                  <Text style={styles.verificationBannerText}>
-                    Your payment is being verified. The vendor will begin preparing your order after verification.
+              <Text
+                style={
+                  styles.successSubtitle
+                }
+              >
+                See you again in{' '}
+                {address?.city ||
+                  'your city'}{' '}
+                👋
+              </Text>
+
+              {successOrderDetails?.paymentMethod ===
+                'online' && (
+                <View
+                  style={
+                    styles.verificationBanner
+                  }
+                >
+                  <Text
+                    style={
+                      styles.verificationBannerText
+                    }
+                  >
+                    Your payment is being
+                    verified. The vendor will
+                    begin preparing your order
+                    after verification.
                   </Text>
                 </View>
               )}
 
-              <View style={styles.successMetaCard}>
-                <View style={[styles.row, styles.metaItemRow]}>
-                  <Text style={styles.metaCardLabel}>Order Number</Text>
-                  <Text style={styles.metaCardValue}>{successOrderDetails?.orderNumber}</Text>
+              <View
+                style={
+                  styles.successMetaCard
+                }
+              >
+                <View
+                  style={[
+                    styles.row,
+                    styles.metaItemRow,
+                  ]}
+                >
+                  <Text
+                    style={
+                      styles.metaCardLabel
+                    }
+                  >
+                    Order Number
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.metaCardValue
+                    }
+                  >
+                    {
+                      successOrderDetails?.orderNumber
+                    }
+                  </Text>
                 </View>
-                <View style={styles.metaItemSeparator} />
-                <View style={[styles.row, styles.metaItemRow]}>
-                  <Text style={styles.metaCardLabel}>Estimated Delivery</Text>
-                  <Text style={styles.metaCardValue}>{successOrderDetails?.eta}</Text>
+
+                <View
+                  style={
+                    styles.metaItemSeparator
+                  }
+                />
+
+                <View
+                  style={[
+                    styles.row,
+                    styles.metaItemRow,
+                  ]}
+                >
+                  <Text
+                    style={
+                      styles.metaCardLabel
+                    }
+                  >
+                    Estimated Delivery
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.metaCardValue
+                    }
+                  >
+                    {
+                      successOrderDetails?.eta
+                    }
+                  </Text>
                 </View>
-                <View style={styles.metaItemSeparator} />
-                <View style={[styles.row, styles.metaItemRow]}>
-                  <Text style={styles.metaCardLabel}>Total Paid</Text>
-                  <Text style={styles.metaCardValueHighlight}>₹{successOrderDetails?.totalAmount}</Text>
+
+                <View
+                  style={
+                    styles.metaItemSeparator
+                  }
+                />
+
+                <View
+                  style={[
+                    styles.row,
+                    styles.metaItemRow,
+                  ]}
+                >
+                  <Text
+                    style={
+                      styles.metaCardLabel
+                    }
+                  >
+                    Total Paid
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.metaCardValueHighlight
+                    }
+                  >
+                    ₹
+                    {
+                      successOrderDetails?.totalAmount
+                    }
+                  </Text>
                 </View>
-                <View style={styles.metaItemSeparator} />
-                <View style={[styles.row, styles.metaItemRow]}>
-                  <Text style={styles.metaCardLabel}>Payment Status</Text>
-                  <Text style={styles.metaCardValue}>
-                    {successOrderDetails?.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Pending Verification'}
+
+                <View
+                  style={
+                    styles.metaItemSeparator
+                  }
+                />
+
+                <View
+                  style={[
+                    styles.row,
+                    styles.metaItemRow,
+                  ]}
+                >
+                  <Text
+                    style={
+                      styles.metaCardLabel
+                    }
+                  >
+                    Payment Status
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.metaCardValue
+                    }
+                  >
+                    {successOrderDetails?.paymentMethod ===
+                    'cod'
+                      ? 'Cash on Delivery'
+                      : 'Pending Verification'}
                   </Text>
                 </View>
               </View>
 
-              {/* Target Requirement 1 & 6: Modern dynamic Delivery OTP details card container */}
-              <View style={styles.otpCardWrapper}>
-                <Text style={styles.otpSectionTitle}>Delivery OTP</Text>
-                <Text style={styles.otpSectionSubtitle}>
-                  Share this OTP with the rider ONLY after receiving your complete order.
+              {/* DELIVERY OTP */}
+              <View
+                style={
+                  styles.otpCardWrapper
+                }
+              >
+                <Text
+                  style={
+                    styles.otpSectionTitle
+                  }
+                >
+                  Delivery OTP
                 </Text>
 
-                {/* Target Requirement 2 & 8: Large light-green pill code visualizer with validation state safe-guard */}
-                <View style={styles.otpValuePillBox}>
-                  <Text style={styles.otpLargeDigitsText}>
-                    {successOrderDetails?.otp ? successOrderDetails.otp : "Generating OTP..."}
+                <Text
+                  style={
+                    styles.otpSectionSubtitle
+                  }
+                >
+                  Share this OTP with the rider ONLY
+                  after receiving your complete order.
+                </Text>
+
+                <View
+                  style={
+                    styles.otpValuePillBox
+                  }
+                >
+                  <Text
+                    style={
+                      styles.otpLargeDigitsText
+                    }
+                  >
+                    {successOrderDetails?.otp
+                      ? successOrderDetails.otp
+                      : 'Generating OTP...'}
                   </Text>
                 </View>
 
-                {/* Target Requirement 3: Expo Clipboard Copy action component */}
-                <Pressable 
-                  onPress={handleCopyOtp} 
-                  style={({ pressed }) => [styles.copyOtpInlineTextBtn, pressed && styles.microInteractionState]}
+                <Pressable
+                  onPress={
+                    handleCopyOtp
+                  }
+                  style={({ pressed }) => [
+                    styles.copyOtpInlineTextBtn,
+                    pressed &&
+                      styles.microInteractionState,
+                  ]}
                 >
-                  <Text style={styles.copyOtpInlineTextBtnLabel}>[ Copy OTP ]</Text>
+                  <Text
+                    style={
+                      styles.copyOtpInlineTextBtnLabel
+                    }
+                  >
+                    [ Copy OTP ]
+                  </Text>
                 </Pressable>
 
-                {/* Target Requirement 4: Essential contextual safety warning node block */}
-                <View style={styles.otpSafetyNoticeDivider} />
-                <Text style={styles.otpSafetyNoticeHeading}>Security</Text>
-                <Text style={styles.otpSafetyNoticeDescription}>
-                  Never share this OTP before you receive your complete order.
+                <View
+                  style={
+                    styles.otpSafetyNoticeDivider
+                  }
+                />
+
+                <Text
+                  style={
+                    styles.otpSafetyNoticeHeading
+                  }
+                >
+                  Security
+                </Text>
+
+                <Text
+                  style={
+                    styles.otpSafetyNoticeDescription
+                  }
+                >
+                  Never share this OTP before you
+                  receive your complete order.
                 </Text>
               </View>
 
-              {/* Target Requirement 5: Existing interactive functional process nodes maintained without alteration */}
               <Pressable
-                style={({ pressed }) => [styles.trackOrderButton, pressed && styles.microInteractionState]}
+                style={({ pressed }) => [
+                  styles.trackOrderButton,
+                  pressed &&
+                    styles.microInteractionState,
+                ]}
                 onPress={() => {
-                  const oId = successOrderDetails?.orderId;
-                  setSuccessOrderDetails(null);
+                  const oId =
+                    successOrderDetails?.orderId;
+
+                  setSuccessOrderDetails(
+                    null
+                  );
+
                   if (oId) {
-                    router.replace({ pathname: '/orders/[id]', params: { id: oId } });
+                    router.replace({
+                      pathname:
+                        '/orders/[id]',
+                      params: {
+                        id: oId,
+                      },
+                    });
                   }
                 }}
               >
-                <Text style={styles.trackOrderButtonText}>Track Order</Text>
+                <Text
+                  style={
+                    styles.trackOrderButtonText
+                  }
+                >
+                  Track Order
+                </Text>
               </Pressable>
 
               <Pressable
-                style={({ pressed }) => [styles.returnShoppingButton, pressed && styles.microInteractionState]}
+                style={({ pressed }) => [
+                  styles.returnShoppingButton,
+                  pressed &&
+                    styles.microInteractionState,
+                ]}
                 onPress={() => {
-                  setSuccessOrderDetails(null);
-                  router.replace('/');
+                  setSuccessOrderDetails(
+                    null
+                  );
+
+                  router.replace(
+                    '/'
+                  );
                 }}
               >
-                <Text style={styles.returnShoppingButtonText}>Continue Shopping</Text>
+                <Text
+                  style={
+                    styles.returnShoppingButtonText
+                  }
+                >
+                  Continue Shopping
+                </Text>
               </Pressable>
             </ScrollView>
           </Animated.View>
@@ -1189,12 +2752,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FAFAFA',
   },
+
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#FAFAFA',
   },
+
   topNavBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1205,24 +2770,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
+
   backButtonIcon: {
     padding: 8,
     marginRight: 8,
   },
+
   backButtonTextSymbol: {
     fontSize: 22,
     color: '#0F172A',
     fontWeight: '600',
   },
+
   navTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#0F172A',
   },
+
   container: {
     padding: 16,
     paddingBottom: 160,
   },
+
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -1231,23 +2801,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.02,
     shadowRadius: 8,
     elevation: 2,
   },
+
   sectionHeader: {
     fontSize: 15,
     fontWeight: '700',
     color: '#1E293B',
     marginBottom: 14,
   },
+
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
   },
+
   etaCard: {
     flexDirection: 'row',
     backgroundColor: '#ECFDF5',
@@ -1258,6 +2834,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     alignItems: 'center',
   },
+
   etaIconWrapper: {
     width: 36,
     height: 36,
@@ -1267,35 +2844,42 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
+
   etaIcon: {
     fontSize: 16,
     color: '#FFFFFF',
   },
+
   etaTextContent: {
     flex: 1,
   },
+
   etaTitle: {
     fontSize: 12,
     color: '#047857',
     fontWeight: '600',
   },
+
   etaTime: {
     fontSize: 15,
     fontWeight: '700',
     color: '#065F46',
     marginTop: 2,
   },
+
   distanceTag: {
     backgroundColor: '#10B981',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
+
   distanceTagText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
   },
+
   input: {
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
@@ -1307,19 +2891,23 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     marginBottom: 10,
   },
+
   row: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+
   addressInfoBox: {
     marginTop: 2,
   },
+
   addressText: {
     fontSize: 14,
     color: '#334155',
     fontWeight: '600',
     lineHeight: 20,
   },
+
   landmarkWrapper: {
     backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
@@ -1329,17 +2917,20 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 4,
   },
+
   addressSubtext: {
     fontSize: 12,
     color: '#475569',
     fontWeight: '500',
   },
+
   addressCityText: {
     fontSize: 13,
     color: '#64748B',
     marginTop: 4,
     fontWeight: '500',
   },
+
   changeAddressBtn: {
     marginTop: 14,
     borderWidth: 1,
@@ -1349,35 +2940,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
   },
+
   changeAddressBtnText: {
     color: '#475569',
     fontSize: 13,
     fontWeight: '600',
   },
+
   addressEmptyState: {
     alignItems: 'center',
     paddingVertical: 10,
   },
+
   errorText: {
     fontSize: 13,
     color: '#64748B',
     marginBottom: 12,
     fontWeight: '500',
   },
+
   primaryButton: {
     backgroundColor: '#10B981',
     paddingHorizontal: 24,
     paddingVertical: 10,
     borderRadius: 10,
   },
+
   primaryButtonText: {
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 13,
   },
+
   addressFormFields: {
     marginTop: 4,
   },
+
   promptLabel: {
     fontSize: 12,
     fontWeight: '600',
@@ -1385,55 +2983,66 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 8,
   },
+
   actionChip: {
     flex: 1,
     paddingVertical: 10,
     borderRadius: 10,
     alignItems: 'center',
   },
+
   actionChipText: {
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
   },
+
   summaryListBlock: {
     marginTop: 2,
   },
+
   summaryItemRow: {
     justifyContent: 'space-between',
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
+
   itemName: {
     fontSize: 14,
     fontWeight: '600',
     color: '#1E293B',
   },
+
   itemQuantity: {
     fontSize: 12,
     color: '#64748B',
     marginTop: 2,
   },
+
   itemPrice: {
     fontSize: 14,
     fontWeight: '700',
     color: '#0F172A',
   },
+
   breakdownRow: {
     justifyContent: 'space-between',
     paddingVertical: 6,
   },
+
   breakdownLabel: {
     fontSize: 13,
     color: '#64748B',
     fontWeight: '500',
   },
+
   breakdownValue: {
     fontSize: 13,
     color: '#334155',
     fontWeight: '600',
   },
+
   gstNotice: {
     fontSize: 11,
     color: '#94A3B8',
@@ -1443,20 +3052,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
+
   grandTotalRow: {
     justifyContent: 'space-between',
     paddingTop: 12,
   },
+
   grandTotalLabel: {
     fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
   },
+
   grandTotalValue: {
     fontSize: 18,
     fontWeight: '900',
     color: '#10B981',
   },
+
   noticeCardContainer: {
     flexDirection: 'row',
     backgroundColor: '#FFFBEB',
@@ -1467,26 +3080,31 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     alignItems: 'flex-start',
   },
+
   noticeCardIcon: {
     fontSize: 18,
     marginRight: 10,
     marginTop: 2,
   },
+
   noticeCardTextWrapper: {
     flex: 1,
   },
+
   noticeCardTitle: {
     fontSize: 13,
     fontWeight: '700',
     color: '#92400E',
     marginBottom: 3,
   },
+
   noticeCardBody: {
     fontSize: 12,
     color: '#B45309',
     lineHeight: 17,
     fontWeight: '500',
   },
+
   paymentOptionSelected: {
     backgroundColor: '#F0FDF4',
     borderWidth: 2,
@@ -1494,6 +3112,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
   },
+
   paymentOptionUnselected: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -1501,6 +3120,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
   },
+
   paymentOptionDisabled: {
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
@@ -1509,6 +3129,7 @@ const styles = StyleSheet.create({
     padding: 16,
     opacity: 0.65,
   },
+
   radioFilled: {
     width: 18,
     height: 18,
@@ -1518,6 +3139,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
     backgroundColor: '#FFFFFF',
   },
+
   radioDisabled: {
     width: 18,
     height: 18,
@@ -1527,16 +3149,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
     marginRight: 12,
   },
+
   paymentMethodNameText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#1E293B',
   },
+
   paymentMethodDisabledText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#94A3B8',
   },
+
   comingSoonBadge: {
     backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
@@ -1545,11 +3170,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
+
   comingSoonBadgeText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#64748B',
   },
+
   radioEmpty: {
     width: 18,
     height: 18,
@@ -1558,6 +3185,7 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
     marginRight: 12,
   },
+
   stickyFooterPanel: {
     position: 'absolute',
     bottom: 0,
@@ -1573,26 +3201,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -6 },
+    shadowOffset: {
+      width: 0,
+      height: -6,
+    },
     shadowOpacity: 0.04,
     shadowRadius: 12,
     elevation: 6,
   },
+
   stickyFooterLeft: {
     flex: 1,
     justifyContent: 'center',
   },
+
   orderTotalTitleLabel: {
     fontSize: 12,
     color: '#64748B',
     fontWeight: '600',
     marginBottom: 2,
   },
+
   stickyTotalAmountText: {
     fontSize: 22,
     fontWeight: '900',
     color: '#0F172A',
   },
+
   stickyOrderPlacementButton: {
     backgroundColor: '#10B981',
     paddingHorizontal: 28,
@@ -1602,34 +3237,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 3,
   },
+
   stickyButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
+
   disabledButton: {
     backgroundColor: '#CBD5E1',
     shadowOpacity: 0,
     elevation: 0,
   },
+
   microInteractionState: {
     opacity: 0.9,
-    transform: [{ scale: 0.98 }],
+    transform: [
+      {
+        scale: 0.98,
+      },
+    ],
   },
+
   modalSystemOverlayBackground: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backgroundColor:
+      'rgba(15, 23, 42, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 40,
   },
+
   successScreenCardContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
@@ -1638,11 +3286,15 @@ const styles = StyleSheet.create({
     maxWidth: 380,
     maxHeight: '90%',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
     shadowOpacity: 0.08,
     shadowRadius: 24,
     elevation: 8,
   },
+
   successScreenBadgeCircle: {
     width: 64,
     height: 64,
@@ -1653,17 +3305,20 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     marginTop: 10,
   },
+
   successBadgeText: {
     fontSize: 28,
     color: '#FFFFFF',
     fontWeight: '700',
   },
+
   successTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'center',
   },
+
   successSubtitle: {
     fontSize: 14,
     color: '#475569',
@@ -1671,6 +3326,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontWeight: '600',
   },
+
   verificationBanner: {
     backgroundColor: '#FEF3C7',
     borderWidth: 1,
@@ -1680,6 +3336,7 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: 14,
   },
+
   verificationBannerText: {
     fontSize: 12,
     color: '#92400E',
@@ -1687,6 +3344,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
   },
+
   successMetaCard: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -1697,30 +3355,36 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 16,
   },
+
   metaItemRow: {
     justifyContent: 'space-between',
     paddingVertical: 4,
   },
+
   metaCardLabel: {
     fontSize: 13,
     color: '#64748B',
     fontWeight: '500',
   },
+
   metaCardValue: {
     fontSize: 13,
     color: '#334155',
     fontWeight: '600',
   },
+
   metaCardValueHighlight: {
     fontSize: 13,
     color: '#10B981',
     fontWeight: '700',
   },
+
   metaItemSeparator: {
     height: 1,
     backgroundColor: '#F1F5F9',
     marginVertical: 8,
   },
+
   trackOrderButton: {
     backgroundColor: '#10B981',
     width: '100%',
@@ -1730,11 +3394,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginTop: 10,
   },
+
   trackOrderButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
   },
+
   returnShoppingButton: {
     backgroundColor: '#FFFFFF',
     width: '100%',
@@ -1745,11 +3411,13 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     marginBottom: 15,
   },
+
   returnShoppingButtonText: {
     color: '#475569',
     fontSize: 13,
     fontWeight: '600',
   },
+
   appIconCircle: {
     width: 40,
     height: 40,
@@ -1758,16 +3426,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 14,
   },
+
   appIconInitial: {
     fontSize: 18,
     fontWeight: '800',
   },
+
   modernAppsContainer: {
     marginTop: 14,
     paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
   },
+
   modernAppCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1778,30 +3449,38 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.03,
     shadowRadius: 6,
     elevation: 2,
   },
+
   modernAppCardSelected: {
     borderColor: '#10B981',
     borderWidth: 2,
     backgroundColor: '#F0FDF4',
   },
+
   appTextDetails: {
     flex: 1,
   },
+
   appNameTitle: {
     fontSize: 15,
     fontWeight: '700',
     color: '#1E293B',
   },
+
   appSubtitleText: {
     fontSize: 12,
     color: '#64748B',
     marginTop: 2,
     fontWeight: '500',
   },
+
   otpCardWrapper: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -1811,11 +3490,15 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.02,
     shadowRadius: 6,
     elevation: 2,
   },
+
   otpSectionTitle: {
     fontSize: 15,
     fontWeight: '700',
@@ -1823,6 +3506,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 4,
   },
+
   otpSectionSubtitle: {
     fontSize: 12,
     color: '#64748B',
@@ -1831,6 +3515,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginBottom: 14,
   },
+
   otpValuePillBox: {
     backgroundColor: '#E6F4EA',
     borderWidth: 1,
@@ -1844,6 +3529,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 8,
   },
+
   otpLargeDigitsText: {
     fontSize: 38,
     fontWeight: '900',
@@ -1851,42 +3537,50 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
     textAlign: 'center',
   },
+
   copyOtpInlineTextBtn: {
     alignSelf: 'center',
     paddingVertical: 6,
     paddingHorizontal: 12,
     marginBottom: 6,
   },
+
   copyOtpInlineTextBtnLabel: {
     color: '#10B981',
     fontSize: 13,
     fontWeight: '700',
     textAlign: 'center',
   },
+
   otpSafetyNoticeDivider: {
     height: 1,
     backgroundColor: '#F1F5F9',
     marginVertical: 10,
   },
+
   otpSafetyNoticeHeading: {
     fontSize: 12,
     fontWeight: '700',
     color: '#DC2626',
     marginBottom: 2,
   },
+
   otpSafetyNoticeDescription: {
     fontSize: 11,
     color: '#64748B',
     fontWeight: '500',
     lineHeight: 15,
   },
+
   missingAppOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor:
+      'rgba(0,0,0,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
   },
+
   missingAppCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
@@ -1895,11 +3589,15 @@ const styles = StyleSheet.create({
     maxWidth: 340,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 6,
   },
+
   missingAppTitle: {
     fontSize: 15,
     fontWeight: '700',
@@ -1908,11 +3606,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     lineHeight: 22,
   },
+
   missingAppButtonRow: {
     flexDirection: 'row',
     gap: 12,
     width: '100%',
   },
+
   missingAppCancelBtn: {
     flex: 1,
     paddingVertical: 12,
@@ -1920,11 +3620,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
   },
+
   missingAppCancelText: {
     fontSize: 13,
     fontWeight: '700',
     color: '#64748B',
   },
+
   missingAppChooseBtn: {
     flex: 1.4,
     paddingVertical: 12,
@@ -1932,6 +3634,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
     alignItems: 'center',
   },
+
   missingAppChooseText: {
     fontSize: 13,
     fontWeight: '800',

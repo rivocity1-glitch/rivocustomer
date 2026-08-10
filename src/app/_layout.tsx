@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import "../global.css";
@@ -10,17 +10,29 @@ import { supabase } from "../lib/supabase";
 
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
+  const [session, setSession] = useState<any>(null);
+  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
+
+  const router = useRouter();
+  const segments = useSegments();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        saveCustomerPushToken(user.id);
+    // Read current initial session on launch
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setIsAuthLoaded(true);
+      if (session?.user) {
+        saveCustomerPushToken(session.user.id);
       }
     });
 
+    // Listen for all auth state events and react
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      setSession(session);
+      setIsAuthLoaded(true);
+
       if (
         (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
         session?.user
@@ -31,6 +43,19 @@ export default function RootLayout() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Handle immediate navigation based on authentication state changes
+  useEffect(() => {
+    if (!isAuthLoaded || showSplash) return;
+
+    const inAuthGroup = segments[0] === "login" || segments[0] === "register";
+
+   if (!session && !inAuthGroup) {
+  router.replace("/login");
+} else if (session && inAuthGroup) {
+  router.replace("/");
+}
+  }, [session, isAuthLoaded, showSplash, segments]);
 
   if (showSplash) {
     return <AnimatedSplash onFinish={() => setShowSplash(false)} />;

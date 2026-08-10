@@ -77,51 +77,138 @@ export default function RegisterScreen() {
   }, [showOtpModal, resendTimer]);
 
   const handleGetCurrentLocation = async () => {
-    try {
-      setDetectingLocation(true);
-      const { status } = await Location.requestForegroundPermissionsAsync();
+  try {
+    setDetectingLocation(true);
 
-      if (status !== 'granted') {
-        Alert.alert(
-          'Location Permission Denied',
-          'Permission to access location was denied. Please fill in your address manually.'
-        );
-        return;
-      }
+    const { status } = await Location.requestForegroundPermissionsAsync();
 
-      const location = await Location.getCurrentPositionAsync({});
-      const lat = location.coords.latitude;
-      const lng = location.coords.longitude;
-      setLatitude(lat);
-      setLongitude(lng);
-
-      const geocodeResults = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-
-      if (geocodeResults && geocodeResults.length > 0) {
-        const item = geocodeResults[0];
-
-        const line1 = [item.name, item.streetNumber, item.street, item.subregion || item.district]
-          .filter(Boolean)
-          .join(', ');
-
-        if (line1) setAddressLine1(line1);
-        if (item.city) setCity(item.city);
-        if (item.region) setState(item.region);
-        if (item.postalCode) setPinCode(item.postalCode);
-
-        Alert.alert(
-          'Location Fetched 📍',
-          'Your current address details have been populated. You can edit them before completing registration.'
-        );
-      }
-    } catch (err: any) {
-      console.error('Location detection error:', err);
-      Alert.alert('Location Error', 'Unable to retrieve location. Please enter your address manually.');
-    } finally {
-      setDetectingLocation(false);
+    if (status !== 'granted') {
+      Alert.alert(
+        'Location Permission Denied',
+        'Permission to access your location was denied. Please enter your address manually.'
+      );
+      return;
     }
-  };
 
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+
+    const lat = location.coords.latitude;
+    const lng = location.coords.longitude;
+
+    // Always save the actual GPS coordinates.
+    setLatitude(lat);
+    setLongitude(lng);
+
+    const geocodeResults = await Location.reverseGeocodeAsync({
+      latitude: lat,
+      longitude: lng,
+    });
+
+    if (!geocodeResults || geocodeResults.length === 0) {
+      Alert.alert(
+        'Location Found 📍',
+        'Your GPS location was detected, but the address could not be converted into a readable address. Please enter the address manually.'
+      );
+      return;
+    }
+
+    const item = geocodeResults[0];
+
+    /*
+     * IMPORTANT:
+     * item.name can sometimes be a Plus Code such as:
+     * 5H28+HGW
+     *
+     * Never use that as Address Line 1.
+     */
+
+    const isPlusCode = (value?: string | null) => {
+      if (!value) return false;
+
+      const normalized = value.trim();
+
+      // Detect common Plus Code patterns.
+      return (
+        normalized.includes('+') &&
+        /^[23456789CFGHJMPQRVWX]{2,8}\+/.test(
+          normalized.toUpperCase()
+        )
+      );
+    };
+
+    // Build a proper street/building address.
+    const streetParts = [
+      item.streetNumber,
+      item.street,
+    ].filter(Boolean);
+
+    const streetAddress = streetParts.join(' ').trim();
+
+    /*
+     * Only use item.name when it is NOT a Plus Code and
+     * when we don't already have a street address.
+     */
+    let detectedAddressLine1 = streetAddress;
+
+    if (!detectedAddressLine1 && item.name && !isPlusCode(item.name)) {
+      detectedAddressLine1 = item.name.trim();
+    }
+
+    /*
+     * Area/locality information belongs in Address Line 2,
+     * not inside Address Line 1.
+     */
+    const detectedArea = [
+      item.district,
+      item.subregion,
+    ]
+      .filter(Boolean)
+      .filter(
+        (value, index, array) =>
+          array.indexOf(value) === index
+      )
+      .join(', ')
+      .trim();
+
+    if (detectedAddressLine1) {
+      setAddressLine1(detectedAddressLine1);
+    }
+
+    if (detectedArea) {
+      setAddressLine2((current) => current.trim() || detectedArea);
+    }
+
+    if (item.city) {
+      setCity(item.city);
+    } else if (item.subregion) {
+      setCity(item.subregion);
+    }
+
+    if (item.region) {
+      setState(item.region);
+    }
+
+    if (item.postalCode) {
+      setPinCode(item.postalCode);
+    }
+
+    Alert.alert(
+      'Location Fetched 📍',
+      'Your current location has been detected and the address fields have been populated. Please review and correct the address before completing registration.'
+    );
+  } catch (err) {
+    console.error('Location detection error:', err);
+
+    Alert.alert(
+      'Location Error',
+      'Unable to retrieve your current location. Please enter your delivery address manually.'
+    );
+  } finally {
+    setDetectingLocation(false);
+  }
+};
   const validateRegistrationForm = async (): Promise<boolean> => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPhone = phone.trim().replace(/[^0-9]/g, '');

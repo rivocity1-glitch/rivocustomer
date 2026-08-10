@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -57,6 +58,29 @@ export default function ProfileScreen() {
 
     fetchProfile();
   }, []);
+
+  const handleHelpSupport = async () => {
+  const helpUrl = 'https://rivo-website.pages.dev/contact';
+
+  try {
+    const supported = await Linking.canOpenURL(helpUrl);
+
+    if (supported) {
+      await Linking.openURL(helpUrl);
+    } else {
+      Alert.alert(
+        'Unable to Open Help',
+        'Please visit the Rivo support page from your browser.'
+      );
+    }
+  } catch (error) {
+    console.error('Failed to open Rivo Help & Support:', error);
+    Alert.alert(
+      'Unable to Open Help',
+      'Please try again later.'
+    );
+  }
+};
 
   const handleLogout = () => {
     Alert.alert(
@@ -224,7 +248,7 @@ export default function ProfileScreen() {
               <View style={styles.cardSeparator} />
 
               <Pressable
-                onPress={() => {}}
+                onPress={() => handleHelpSupport()}
                 style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
               >
                 <View style={styles.menuLeftBlock}>
