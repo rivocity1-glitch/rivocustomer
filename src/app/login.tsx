@@ -56,9 +56,42 @@ export default function LoginScreen() {
         data: { session },
       } = await supabase.auth.getSession();
 
-      if (session?.user) {
-        await ensureCustomerRecordExists(session.user);
+      if (!session?.user) {
+        return;
+      }
+
+      try {
+        // A Supabase Auth session alone is NOT enough.
+        // The user must also have an existing Rivo customer record.
+        const { data: existingCustomer, error } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('auth_user_id', session.user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.error(
+            'Customer session validation error:',
+            error
+          );
+
+          await supabase.auth.signOut();
+          return;
+        }
+
+        if (!existingCustomer) {
+          await supabase.auth.signOut();
+          return;
+        }
+
         router.replace('/');
+      } catch (error) {
+        console.error(
+          'Existing session validation error:',
+          error
+        );
+
+        await supabase.auth.signOut();
       }
     }
 
@@ -116,61 +149,6 @@ export default function LoginScreen() {
       }
     };
   }, [otpSent, resendTimer]);
-
-  // Ensure customer profile & address records exist
-  const ensureCustomerRecordExists = async (user: any) => {
-    try {
-      const { data: existingCustomer } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('auth_user_id', user.id)
-        .maybeSingle();
-
-      if (!existingCustomer) {
-        const fullCustomerName =
-          user.user_metadata?.full_name || 'Rivo Customer';
-
-        const userEmail = user.email || '';
-        const userPhone = user.phone || '';
-
-        const { data: newCustomer, error: custError } = await supabase
-          .from('customers')
-          .insert([
-            {
-              auth_user_id: user.id,
-              customer_name: fullCustomerName,
-              email: userEmail,
-              phone: userPhone,
-            },
-          ])
-          .select()
-          .single();
-
-        if (!custError && newCustomer) {
-          await supabase.from('customer_addresses').insert([
-            {
-              customer_id: newCustomer.id,
-              address_line1: '',
-              address_line2: '',
-              city: '',
-              state: '',
-              pin_code: '',
-              landmark: '',
-              address_type: 'home',
-              is_default: true,
-              latitude: null,
-              longitude: null,
-            },
-          ]);
-        }
-      }
-    } catch (e) {
-      console.error(
-        'Error auto-provisioning customer profile:',
-        e
-      );
-    }
-  };
 
   // ---------------------------------------------------------
   // PASSWORD LOGIN
@@ -252,10 +230,44 @@ export default function LoginScreen() {
         throw error;
       }
 
-      if (data?.user) {
-        await ensureCustomerRecordExists(data.user);
-        router.replace('/');
+      if (!data?.user) {
+        throw new Error(
+          'Unable to verify the customer account.'
+        );
       }
+
+      // IMPORTANT:
+      // Password authentication does NOT create a customer.
+      // The authenticated user must already have a customer record.
+      const { data: existingCustomer, error: customerError } =
+        await supabase
+          .from('customers')
+          .select('id')
+          .eq('auth_user_id', data.user.id)
+          .maybeSingle();
+
+      if (customerError) {
+        console.error(
+          'Customer validation error:',
+          customerError
+        );
+
+        await supabase.auth.signOut();
+
+        throw new Error(
+          'Unable to verify your customer account.'
+        );
+      }
+
+      if (!existingCustomer) {
+        await supabase.auth.signOut();
+
+        throw new Error(
+          'This account is not registered as a Rivo customer. Please create a customer account first.'
+        );
+      }
+
+      router.replace('/');
     } catch (error: any) {
       console.error('Password login error:', error);
 
@@ -297,11 +309,52 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
+      // IMPORTANT:
+      // OTP login is only for existing Rivo customers.
+      // Check the customers table BEFORE sending the OTP.
+      const { data: existingCustomer, error: customerError } =
+        await supabase
+          .from('customers')
+          .select('id, auth_user_id')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+
+      if (customerError) {
+        console.error(
+          'OTP customer lookup error:',
+          customerError
+        );
+
+        throw new Error(
+          'Unable to verify this customer account. Please try again.'
+        );
+      }
+
+      if (!existingCustomer) {
+        Alert.alert(
+          'Account Not Found',
+          'No Rivo customer account is registered with this email address. Please create an account first.'
+        );
+        return;
+      }
+
+      if (!existingCustomer.auth_user_id) {
+        Alert.alert(
+          'Account Not Ready',
+          'This customer account is not linked to a login account yet. Please contact Rivo support.'
+        );
+        return;
+      }
+
+      // IMPORTANT:
+      // shouldCreateUser MUST remain false.
+      // An unregistered email must NEVER create a new Auth user
+      // from the login screen.
       const { error } =
         await supabase.auth.signInWithOtp({
           email: cleanEmail,
           options: {
-            shouldCreateUser: true,
+            shouldCreateUser: false,
             emailRedirectTo: undefined,
           },
         });
@@ -319,6 +372,8 @@ export default function LoginScreen() {
         'A 6-digit verification code has been dispatched to your email.'
       );
     } catch (error: any) {
+      console.error('Send OTP error:', error);
+
       Alert.alert(
         'Error',
         error?.message ||
@@ -347,6 +402,44 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
+      // Verify that this is still an existing Rivo customer
+      // before allowing the OTP session to enter the app.
+      const {
+        data: existingCustomer,
+        error: customerLookupError,
+      } = await supabase
+        .from('customers')
+        .select('id, auth_user_id')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+
+      if (customerLookupError) {
+        console.error(
+          'OTP verification customer lookup error:',
+          customerLookupError
+        );
+
+        throw new Error(
+          'Unable to verify your customer account.'
+        );
+      }
+
+      if (!existingCustomer) {
+        await supabase.auth.signOut();
+
+        throw new Error(
+          'This email is not registered as a Rivo customer. Please create an account first.'
+        );
+      }
+
+      if (!existingCustomer.auth_user_id) {
+        await supabase.auth.signOut();
+
+        throw new Error(
+          'This customer account is not linked to a login account.'
+        );
+      }
+
       const { data, error } =
         await supabase.auth.verifyOtp({
           email: cleanEmail,
@@ -358,11 +451,28 @@ export default function LoginScreen() {
         throw error;
       }
 
-      if (data?.user) {
-        await ensureCustomerRecordExists(data.user);
-        router.replace('/');
+      if (!data?.user) {
+        throw new Error(
+          'Unable to verify the customer account.'
+        );
       }
+
+      // The authenticated Auth user must belong to the
+      // already-existing customer record.
+      if (
+        data.user.id !== existingCustomer.auth_user_id
+      ) {
+        await supabase.auth.signOut();
+
+        throw new Error(
+          'This login account is not linked to the Rivo customer account.'
+        );
+      }
+
+      router.replace('/');
     } catch (error: any) {
+      console.error('OTP verification error:', error);
+
       Alert.alert(
         'Verification Failed',
         error?.message ||
@@ -520,11 +630,7 @@ export default function LoginScreen() {
                       placeholderTextColor="#94A3B8"
                       value={loginIdentifier}
                       onChangeText={setLoginIdentifier}
-                      keyboardType={
-                        loginIdentifier.includes('@')
-                          ? 'email-address'
-                          : 'phone-pad'
-                      }
+                      keyboardType="default"
                       autoCapitalize="none"
                       autoCorrect={false}
                       onFocus={() =>
