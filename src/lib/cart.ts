@@ -113,15 +113,6 @@ export function subscribeCart(listener: () => void) {
 export function addToCart(product: any) {
   if (!product || !product.id) return;
 
-  // Prevent mixing products from multiple vendors
-  if (cart.length > 0) {
-    const existingVendorId = cart[0].vendor_id;
-    if (existingVendorId && product.vendor_id && existingVendorId !== product.vendor_id) {
-      // Clear cart if user chooses to order from a different vendor
-      cart = [];
-    }
-  }
-
   const existingItem = cart.find((item) => String(item.id) === String(product.id));
 
   if (existingItem) {

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import "../global.css";
 
 import AnimatedSplash from "../../src/components/AnimatedSplash";
-
 import { saveCustomerPushToken } from "../lib/pushNotifications";
 import { supabase } from "../lib/supabase";
 
@@ -17,15 +16,12 @@ export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
 
-  // ---------------------------------------------------------
-  // AUTH + CUSTOMER SESSION
-  // ---------------------------------------------------------
-
   useEffect(() => {
     let mounted = true;
 
     const validateCustomerSession = async (
-      currentSession: any
+      currentSession: any,
+      retryCount = 0
     ) => {
       if (!currentSession?.user) {
         if (!mounted) return;
@@ -37,12 +33,6 @@ export default function RootLayout() {
       }
 
       try {
-        /*
-         * A Supabase Auth session alone is NOT enough.
-         *
-         * The user must have an existing customers row
-         * linked through customers.auth_user_id.
-         */
         const {
           data: customer,
           error: customerError,
@@ -58,6 +48,25 @@ export default function RootLayout() {
             customerError
           );
 
+          /*
+           * Do not immediately sign out.
+           *
+           * During OTP registration, Supabase fires SIGNED_IN
+           * before register.tsx finishes creating the customer row.
+           */
+          if (retryCount < 10) {
+            setTimeout(() => {
+              if (mounted) {
+                validateCustomerSession(
+                  currentSession,
+                  retryCount + 1
+                );
+              }
+            }, 500);
+
+            return;
+          }
+
           await supabase.auth.signOut();
 
           if (!mounted) return;
@@ -69,10 +78,25 @@ export default function RootLayout() {
         }
 
         /*
-         * Auth user exists but is not registered as a
-         * Rivo customer.
+         * Customer row may not exist yet because OTP verification
+         * happens before registration profile creation.
+         *
+         * Wait instead of signing the user out.
          */
         if (!customer) {
+          if (retryCount < 10) {
+            setTimeout(() => {
+              if (mounted) {
+                validateCustomerSession(
+                  currentSession,
+                  retryCount + 1
+                );
+              }
+            }, 500);
+
+            return;
+          }
+
           console.warn(
             "Authenticated user has no Rivo customer record."
           );
@@ -93,13 +117,29 @@ export default function RootLayout() {
         setIsCustomerVerified(true);
         setIsAuthLoaded(true);
 
-        // Only save push token for verified customers.
         saveCustomerPushToken(currentSession.user.id);
       } catch (error) {
         console.error(
           "Customer session validation failed:",
           error
         );
+
+        /*
+         * Give registration enough time to finish before
+         * treating the session as invalid.
+         */
+        if (retryCount < 10) {
+          setTimeout(() => {
+            if (mounted) {
+              validateCustomerSession(
+                currentSession,
+                retryCount + 1
+              );
+            }
+          }, 500);
+
+          return;
+        }
 
         await supabase.auth.signOut();
 
@@ -111,25 +151,16 @@ export default function RootLayout() {
       }
     };
 
-    // Initial session check.
     supabase.auth
       .getSession()
       .then(({ data: { session } }) => {
         validateCustomerSession(session);
       });
 
-    // Listen for authentication changes.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
       (event, currentSession) => {
-        /*
-         * Do not blindly trust SIGNED_IN.
-         *
-         * SIGNED_IN only proves Supabase Auth succeeded.
-         * validateCustomerSession() verifies that the Auth
-         * user is actually a Rivo customer.
-         */
         if (
           event === "SIGNED_IN" ||
           event === "TOKEN_REFRESHED" ||
@@ -154,10 +185,6 @@ export default function RootLayout() {
     };
   }, []);
 
-  // ---------------------------------------------------------
-  // ROUTING
-  // ---------------------------------------------------------
-
   useEffect(() => {
     if (!isAuthLoaded || showSplash) {
       return;
@@ -167,10 +194,6 @@ export default function RootLayout() {
       segments[0] === "login" ||
       segments[0] === "register";
 
-    /*
-     * No valid customer session:
-     * only login/register are allowed.
-     */
     if (!session || !isCustomerVerified) {
       if (!inAuthGroup) {
         router.replace("/login");
@@ -179,11 +202,11 @@ export default function RootLayout() {
       return;
     }
 
-    /*
-     * Valid Rivo customer:
-     * don't allow customer to remain on login/register.
-     */
-    if (session && isCustomerVerified && inAuthGroup) {
+    if (
+      session &&
+      isCustomerVerified &&
+      inAuthGroup
+    ) {
       router.replace("/");
     }
   }, [
@@ -193,10 +216,6 @@ export default function RootLayout() {
     showSplash,
     segments,
   ]);
-
-  // ---------------------------------------------------------
-  // SPLASH
-  // ---------------------------------------------------------
 
   if (showSplash) {
     return (
@@ -208,7 +227,7 @@ export default function RootLayout() {
 
   return (
     <>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
 
       <Stack
         screenOptions={{

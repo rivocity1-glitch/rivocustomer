@@ -1,13 +1,10 @@
-// src/app/checkout.tsx
-
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Animated,
-  Clipboard,
-  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -17,7 +14,7 @@ import {
   View,
 } from 'react-native';
 
-import { cart, clearCart } from '../lib/cart';
+import { cart, CartItem, clearCart } from '../lib/cart';
 import { supabase } from '../lib/supabase';
 import { calculateBilling, DeliveryConfig } from '../utils/billing';
 import { calculateDistance } from '../utils/distance';
@@ -34,92 +31,39 @@ interface SavedAddress {
   longitude?: number | null;
 }
 
-type OnlineAppType =
-  | 'gpay'
-  | 'phonepe'
-  | 'paytm'
-  | 'bhim'
-  | 'amazonpay'
-  | 'other';
-
-interface PaymentAppOption {
-  id: OnlineAppType;
-  name: string;
-  subtitle: string;
-  initial: string;
-  color: string;
-  bgColor: string;
-  scheme: string;
+interface VendorData {
+  vendorId: string;
+  storeName: string;
+  latitude: number | null;
+  longitude: number | null;
+  planName: string;
+  commissionPercent: number;
 }
 
-const PAYMENT_APPS: PaymentAppOption[] = [
-  {
-    id: 'gpay',
-    name: 'Google Pay',
-    subtitle: 'Pay securely using Google Pay',
-    initial: 'G',
-    color: '#2563EB',
-    bgColor: '#EAEFFF',
-    scheme: 'gpay://upi/pay',
-  },
-  {
-    id: 'phonepe',
-    name: 'PhonePe',
-    subtitle: 'Pay securely using PhonePe',
-    initial: 'P',
-    color: '#7C3AED',
-    bgColor: '#F5EFFF',
-    scheme: 'phonepe://pay',
-  },
-  {
-    id: 'paytm',
-    name: 'Paytm',
-    subtitle: 'Pay securely using Paytm',
-    initial: 'P',
-    color: '#0284C7',
-    bgColor: '#E0F2FE',
-    scheme: 'paytmmp://pay',
-  },
-  {
-    id: 'bhim',
-    name: 'BHIM',
-    subtitle: 'Pay securely using BHIM UPI',
-    initial: 'B',
-    color: '#EA580C',
-    bgColor: '#FFEDD5',
-    scheme: 'bhim://pay',
-  },
-  {
-    id: 'amazonpay',
-    name: 'Amazon Pay',
-    subtitle: 'Pay securely using Amazon Pay',
-    initial: 'A',
-    color: '#D97706',
-    bgColor: '#FEF3C7',
-    scheme: 'amazonpay://pay',
-  },
-  {
-    id: 'other',
-    name: 'Other UPI Apps',
-    subtitle: 'Choose from installed UPI applications',
-    initial: 'U',
-    color: '#10B981',
-    bgColor: '#ECFDF5',
-    scheme: 'upi://pay',
-  },
-];
+interface VendorOrderGroup {
+  vendorId: string;
+  storeName: string;
+  items: CartItem[];
+  subtotal: number;
+  distanceKm: number | null;
+  billing: ReturnType<typeof calculateBilling>;
+}
+
+interface CreatedVendorOrderSummary {
+  orderId: string;
+  orderNumber: string;
+  storeName: string;
+  totalAmount: number;
+  otp: string;
+}
 
 export default function CheckoutScreen() {
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
-  const [customerId, setCustomerId] = useState<number | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
+
   const [address, setAddress] = useState<SavedAddress | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const [vendorLocation, setVendorLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
 
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
@@ -138,76 +82,27 @@ export default function CheckoutScreen() {
     longitude: null,
   });
 
-  const [successOrderDetails, setSuccessOrderDetails] =
-    useState<{
-      orderId: string;
-      orderNumber: string;
-      totalAmount: number;
-      eta: string;
-      paymentMethod: 'cod' | 'online';
-      otp: string;
-    } | null>(null);
+  const [createdOrders, setCreatedOrders] = useState<
+    CreatedVendorOrderSummary[] | null
+  >(null);
 
-  const [vendorPlanName, setVendorPlanName] =
-    useState<string>('free');
-
-  // Fixed platform fee in rupees.
-  // Database:
-  // setting_key = platform_fee
-  // setting_value = 6
-  const [platformFee, setPlatformFee] =
-    useState<number>(0);
-
+  const [platformFee, setPlatformFee] = useState(0);
   const [deliveryConfig, setDeliveryConfig] =
     useState<DeliveryConfig | null>(null);
 
-  const [paymentMethod, setPaymentMethod] =
-    useState<'cod' | 'online'>('cod');
+  const [vendorDataMap, setVendorDataMap] = useState<
+    Record<string, VendorData>
+  >({});
 
-  const [selectedOnlineApp, setSelectedOnlineApp] =
-    useState<OnlineAppType | null>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  const checkmarkBounce = useRef(new Animated.Value(0)).current;
 
-  const [vendorUpiId, setVendorUpiId] =
-    useState<string>('');
-
-  const [vendorShopName, setVendorShopName] =
-    useState<string>('');
-
-  const [paymentSubmitted, setPaymentSubmitted] =
-    useState(false);
-
-  const [missingAppModal, setMissingAppModal] =
-    useState<{
-      visible: boolean;
-      appName: string;
-    }>({
-      visible: false,
-      appName: '',
-    });
-
-  const preGeneratedOrderNumber = useMemo(() => {
-    return (
-      'ORD-' +
-      Math.floor(
-        100000 + Math.random() * 900000
-      )
-    );
-  }, []);
-
-  const fadeAnim = useRef(
-    new Animated.Value(0)
-  ).current;
-
-  const scaleAnim = useRef(
-    new Animated.Value(0.95)
-  ).current;
-
-  const checkmarkBounce = useRef(
-    new Animated.Value(0)
-  ).current;
-
+  /*
+   * SUCCESS ANIMATION
+   */
   useEffect(() => {
-    if (successOrderDetails !== null) {
+    if (createdOrders !== null) {
       fadeAnim.setValue(0);
       scaleAnim.setValue(0.95);
       checkmarkBounce.setValue(0);
@@ -218,13 +113,11 @@ export default function CheckoutScreen() {
           duration: 400,
           useNativeDriver: true,
         }),
-
         Animated.timing(scaleAnim, {
           toValue: 1,
           duration: 400,
           useNativeDriver: true,
         }),
-
         Animated.spring(checkmarkBounce, {
           toValue: 1,
           friction: 4,
@@ -233,71 +126,120 @@ export default function CheckoutScreen() {
         }),
       ]).start();
     }
-  }, [successOrderDetails]);
+  }, [createdOrders, fadeAnim, scaleAnim, checkmarkBounce]);
 
   /*
-   * VENDOR → CUSTOMER DISTANCE
+   * GROUP CART ITEMS BY VENDOR
+   *
+   * Every unique vendor gets one order.
    */
-  const distance = useMemo(() => {
-    if (
-      address?.latitude == null ||
-      address?.longitude == null ||
-      vendorLocation?.latitude == null ||
-      vendorLocation?.longitude == null
-    ) {
-      return null;
-    }
+  const vendorOrderGroups: VendorOrderGroup[] = useMemo(() => {
+    const groups = new Map<string, CartItem[]>();
 
-    return calculateDistance(
-      vendorLocation.latitude,
-      vendorLocation.longitude,
-      Number(address.latitude),
-      Number(address.longitude)
-    );
-  }, [address, vendorLocation]);
+    cart.forEach(item => {
+      if (!item.vendor_id) {
+        return;
+      }
 
-  /*
-   * CENTRAL BILLING ENGINE
-   */
-  const checkoutCharges = useMemo(() => {
-    if (distance === null) {
-      return {
-        itemsTotal: 0,
-        deliveryFee: 0,
-        platformFee: 0,
-        grandTotal: 0,
-        chargeableDistanceKm: 0,
-        riderEarning: 0,
-        rivoDeliveryMargin: 0,
-        vendorCommission: 0,
-        vendorEarning: 0,
-      };
-    }
+      const vendorId = String(item.vendor_id);
 
-    let commissionPercent = 5;
+      const existingItems = groups.get(vendorId) ?? [];
 
-    if (
-      vendorPlanName === 'basic' ||
-      vendorPlanName === 'growth' ||
-      vendorPlanName === 'pro'
-    ) {
-      commissionPercent = 0;
-    }
+      existingItems.push(item);
 
-    return calculateBilling({
-      cartItems: cart,
-      distanceKm: distance,
-      platformFee,
-      commissionPercent,
-      deliveryConfig,
+      groups.set(vendorId, existingItems);
     });
+
+    const result: VendorOrderGroup[] = [];
+
+    groups.forEach((items, vendorId) => {
+      const vendorInfo = vendorDataMap[vendorId];
+
+      const storeName =
+        vendorInfo?.storeName?.trim() || 'Partner Store';
+
+      let distanceKm: number | null = null;
+
+      if (
+        address?.latitude != null &&
+        address?.longitude != null &&
+        vendorInfo?.latitude != null &&
+        vendorInfo?.longitude != null
+      ) {
+        distanceKm = calculateDistance(
+          Number(vendorInfo.latitude),
+          Number(vendorInfo.longitude),
+          Number(address.latitude),
+          Number(address.longitude)
+        );
+      }
+
+      const commissionPercent = Number.isFinite(
+        Number(vendorInfo?.commissionPercent)
+      )
+        ? Number(vendorInfo?.commissionPercent)
+        : 5;
+
+      const billing = calculateBilling({
+        cartItems: items,
+        distanceKm: distanceKm ?? 0,
+        platformFee,
+        commissionPercent,
+        deliveryConfig,
+      });
+
+      const subtotal = items.reduce(
+        (sum, item) =>
+          sum +
+          Number(item.price || 0) * Number(item.quantity || 0),
+        0
+      );
+
+      result.push({
+        vendorId,
+        storeName,
+        items,
+        subtotal,
+        distanceKm,
+        billing,
+      });
+    });
+
+    return result;
   }, [
-    distance,
-    vendorPlanName,
+    vendorDataMap,
+    address,
     platformFee,
     deliveryConfig,
   ]);
 
+  /*
+   * AGGREGATED CUSTOMER BILL
+   */
+  const aggregateBilling = useMemo(() => {
+    let itemsTotal = 0;
+    let deliveryFee = 0;
+    let totalPlatformFee = 0;
+    let grandTotal = 0;
+
+    vendorOrderGroups.forEach(group => {
+      itemsTotal += Number(group.billing.itemsTotal || 0);
+      deliveryFee += Number(group.billing.deliveryFee || 0);
+      totalPlatformFee += Number(group.billing.platformFee || 0);
+      grandTotal += Number(group.billing.grandTotal || 0);
+    });
+
+    return {
+      itemsTotal,
+      deliveryFee,
+      platformFee: totalPlatformFee,
+      grandTotal,
+    };
+  }, [vendorOrderGroups]);
+
+  /*
+   * LOAD CHECKOUT DATA
+   */
   useEffect(() => {
     loadCheckoutDetails();
   }, []);
@@ -307,23 +249,14 @@ export default function CheckoutScreen() {
       setLoading(true);
 
       /*
-       * FIXED PLATFORM FEE
-       *
-       * Actual database row:
-       *
-       * setting_key   = platform_fee
-       * setting_value = 6
-       *
-       * This is ₹6 fixed, NOT 6%.
+       * PLATFORM FEE
        */
-      const {
-        data: feeSettings,
-        error: feeSettingsError,
-      } = await supabase
-        .from('platform_settings')
-        .select('setting_value')
-        .eq('setting_key', 'platform_fee')
-        .maybeSingle();
+      const { data: feeSettings, error: feeSettingsError } =
+        await supabase
+          .from('platform_settings')
+          .select('setting_value')
+          .eq('setting_key', 'platform_fee')
+          .maybeSingle();
 
       if (feeSettingsError) {
         console.error(
@@ -340,29 +273,18 @@ export default function CheckoutScreen() {
           feeSettings.setting_value
         );
 
-        if (
+        setPlatformFee(
           Number.isFinite(fixedPlatformFee) &&
-          fixedPlatformFee >= 0
-        ) {
-          setPlatformFee(fixedPlatformFee);
-        } else {
-          console.error(
-            'Invalid platform fee value:',
-            feeSettings.setting_value
-          );
-
-          setPlatformFee(0);
-        }
-      } else {
-        console.warn(
-          'Platform fee setting not found. Using ₹0.'
+            fixedPlatformFee >= 0
+            ? fixedPlatformFee
+            : 0
         );
-
+      } else {
         setPlatformFee(0);
       }
 
       /*
-       * DELIVERY CONFIGURATION
+       * DELIVERY CONFIG
        */
       const {
         data: deliverySettings,
@@ -386,11 +308,8 @@ export default function CheckoutScreen() {
       ) {
         try {
           const parsedDelivery =
-            typeof deliverySettings.setting_value ===
-            'string'
-              ? JSON.parse(
-                  deliverySettings.setting_value
-                )
+            typeof deliverySettings.setting_value === 'string'
+              ? JSON.parse(deliverySettings.setting_value)
               : deliverySettings.setting_value;
 
           setDeliveryConfig({
@@ -424,43 +343,46 @@ export default function CheckoutScreen() {
       }
 
       /*
-       * AUTHENTICATED CUSTOMER
+       * AUTHENTICATION
        */
-      const {
-        data,
-        error: userError,
-      } = await supabase.auth.getUser();
+      const { data: authData, error: userError } =
+        await supabase.auth.getUser();
 
-      const user = data?.user ?? null;
+      const user = authData?.user ?? null;
 
       if (userError || !user) {
         Alert.alert(
           'Login Required',
-          'Please login before placing an order'
+          'Please login before placing an order.'
         );
 
         router.replace('/login');
+
         return;
       }
 
       setAuthUserId(user.id);
 
       /*
-       * CUSTOMER PROFILE
+       * CUSTOMER
        */
-      const { data: customer } = await supabase
-        .from('customers')
-        .select(
-          'id, customer_name, phone'
-        )
-        .eq('auth_user_id', user.id)
-        .maybeSingle();
+      const { data: customer, error: customerError } =
+        await supabase
+          .from('customers')
+          .select('id, customer_name, phone')
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+
+      if (customerError) {
+        console.error(
+          'Error loading customer:',
+          customerError
+        );
+      }
 
       if (customer) {
-        setCustomerId(customer.id);
-        setCustomerName(
-          customer.customer_name || ''
-        );
+        setCustomerId(String(customer.id));
+        setCustomerName(customer.customer_name || '');
         setPhone(customer.phone || '');
 
         /*
@@ -478,21 +400,24 @@ export default function CheckoutScreen() {
           .eq('is_default', true)
           .maybeSingle();
 
-        if (!addressError && addressData) {
+        if (addressError) {
+          console.error(
+            'Error loading address:',
+            addressError
+          );
+        }
+
+        if (addressData) {
           setAddress({
             id: addressData.id,
             address_line1:
               addressData.address_line1 || '',
             address_line2:
               addressData.address_line2 || '',
-            landmark:
-              addressData.landmark || '',
-            city:
-              addressData.city || '',
-            state:
-              addressData.state || '',
-            pin_code:
-              addressData.pin_code || '',
+            landmark: addressData.landmark || '',
+            city: addressData.city || '',
+            state: addressData.state || '',
+            pin_code: addressData.pin_code || '',
             latitude:
               addressData.latitude !== null &&
               addressData.latitude !== undefined
@@ -508,113 +433,163 @@ export default function CheckoutScreen() {
       }
 
       /*
-       * VENDOR CONTEXT
+       * LOAD UNIQUE VENDORS
        */
-      if (cart.length > 0) {
-        const vendorId =
-          cart[0].vendor_id;
+      const uniqueVendorIds = Array.from(
+        new Set(
+          cart
+            .map(item =>
+              item.vendor_id
+                ? String(item.vendor_id)
+                : null
+            )
+            .filter(
+              (value): value is string => Boolean(value)
+            )
+        )
+      );
 
+      const newMap: Record<string, VendorData> = {};
+
+      for (const vendorId of uniqueVendorIds) {
+        /*
+         * VENDOR PROFILE
+         */
         const {
           data: vendorProfile,
-          error: vendorError,
+          error: vendorProfileError,
         } = await supabase
           .from('vendor_profiles')
           .select(
-            'latitude, longitude, upi_id, vendors(shop_name)'
+            'store_name, latitude, longitude'
           )
           .eq('vendor_id', vendorId)
           .maybeSingle();
 
-        if (!vendorError && vendorProfile) {
-          if (
-            vendorProfile.latitude !== null &&
-            vendorProfile.latitude !== undefined &&
-            vendorProfile.longitude !== null &&
-            vendorProfile.longitude !== undefined
-          ) {
-            setVendorLocation({
-              latitude: Number(
-                vendorProfile.latitude
-              ),
-              longitude: Number(
-                vendorProfile.longitude
-              ),
-            });
-          }
-
-          if (vendorProfile.upi_id) {
-            setVendorUpiId(
-              vendorProfile.upi_id
-            );
-          }
-
-          const nestedVendorObj: any =
-            vendorProfile.vendors;
-
-          if (
-            nestedVendorObj &&
-            nestedVendorObj.shop_name
-          ) {
-            setVendorShopName(
-              nestedVendorObj.shop_name
-            );
-          }
+        if (vendorProfileError) {
+          console.error(
+            `Error loading vendor profile ${vendorId}:`,
+            vendorProfileError
+          );
         }
 
         /*
-         * VENDOR SUBSCRIPTION
+         * FALLBACK VENDOR NAME
          */
+        let storeName =
+          vendorProfile?.store_name || '';
+
+        if (!storeName.trim()) {
+          const { data: vendorRecord } =
+            await supabase
+              .from('vendors')
+              .select('shop_name')
+              .eq('id', vendorId)
+              .maybeSingle();
+
+          storeName =
+            vendorRecord?.shop_name ||
+            'Partner Store';
+        }
+
+        /*
+         * ACTIVE SUBSCRIPTION
+         *
+         * commission_percent is the source of truth.
+         */
+        let commissionPercent = 5;
+        let planName = 'free';
+
         try {
-          const { data: vendorSub } =
+          const { data: subscription } =
             await supabase
               .from('subscriptions')
               .select(
-                'plan_name, status'
+                'plan_name, commission_percent, status'
               )
-              .eq(
-                'vendor_id',
-                vendorId
-              )
-              .eq(
-                'status',
-                'active'
-              )
+              .eq('vendor_id', vendorId)
+              .eq('status', 'active')
+              .order('end_date', {
+                ascending: false,
+              })
+              .limit(1)
               .maybeSingle();
 
-          if (
-            vendorSub &&
-            vendorSub.plan_name
-          ) {
-            setVendorPlanName(
-              vendorSub.plan_name.toLowerCase()
-            );
-          } else {
-            setVendorPlanName('free');
-          }
-        } catch (e) {
-          console.error(
-            'Error determining vendor subscription:',
-            e
-          );
+          if (subscription) {
+            if (subscription.plan_name) {
+              planName =
+                String(
+                  subscription.plan_name
+                ).toLowerCase();
+            }
 
-          setVendorPlanName('free');
+            if (
+              subscription.commission_percent !==
+                null &&
+              subscription.commission_percent !==
+                undefined
+            ) {
+              const databaseCommission =
+                Number(
+                  subscription.commission_percent
+                );
+
+              if (
+                Number.isFinite(
+                  databaseCommission
+                ) &&
+                databaseCommission >= 0
+              ) {
+                commissionPercent =
+                  databaseCommission;
+              }
+            }
+          }
+        } catch (error) {
+          console.error(
+            `Error loading subscription for ${vendorId}:`,
+            error
+          );
         }
+
+        newMap[vendorId] = {
+          vendorId,
+          storeName,
+          latitude:
+            vendorProfile?.latitude !== null &&
+            vendorProfile?.latitude !== undefined
+              ? Number(
+                  vendorProfile.latitude
+                )
+              : null,
+          longitude:
+            vendorProfile?.longitude !== null &&
+            vendorProfile?.longitude !== undefined
+              ? Number(
+                  vendorProfile.longitude
+                )
+              : null,
+          planName,
+          commissionPercent,
+        };
       }
-    } catch (err) {
+
+      setVendorDataMap(newMap);
+    } catch (error) {
       console.error(
-        'Error loading checkout setup context:',
-        err
+        'Error loading checkout setup:',
+        error
       );
     } finally {
       setLoading(false);
     }
   }
 
+  /*
+   * CREATE CUSTOMER PROFILE IF NEEDED
+   */
   async function handleCreateProfile() {
-    if (
-      !customerName.trim() ||
-      !phone.trim()
-    ) {
+    if (!customerName.trim() || !phone.trim()) {
       Alert.alert(
         'Missing Fields',
         'Please enter your full name and phone number.'
@@ -623,15 +598,14 @@ export default function CheckoutScreen() {
       return;
     }
 
-    if (!authUserId) return;
+    if (!authUserId) {
+      return;
+    }
 
     try {
       setCreatingProfile(true);
 
-      const {
-        data,
-        error,
-      } = await supabase
+      const { data, error } = await supabase
         .from('customers')
         .insert({
           auth_user_id: authUserId,
@@ -642,34 +616,47 @@ export default function CheckoutScreen() {
         .select()
         .single();
 
-      if (!error && data) {
-        setCustomerId(data.id);
-
-        Alert.alert(
-          'Success 🎉',
-          'Profile linked successfully!'
-        );
-      } else {
+      if (error || !data) {
         Alert.alert(
           'Error',
           error?.message ||
-            'Could not instantiate your customer profile card.'
+            'Could not create your customer profile.'
         );
+
+        return;
       }
-    } catch (err) {
-      console.error(err);
+
+      setCustomerId(String(data.id));
+
+      Alert.alert(
+        'Success',
+        'Profile linked successfully.'
+      );
+    } catch (error) {
+      console.error(
+        'Error creating customer profile:',
+        error
+      );
+
+      Alert.alert(
+        'Error',
+        'Could not create your customer profile.'
+      );
     } finally {
       setCreatingProfile(false);
     }
   }
 
+  /*
+   * ADDRESS FORM
+   */
   const updateFormField = (
     key: keyof SavedAddress,
-    val: string
+    value: string
   ) => {
-    setFormAddress(prev => ({
-      ...prev,
-      [key]: val,
+    setFormAddress(previous => ({
+      ...previous,
+      [key]: value,
     }));
   };
 
@@ -681,7 +668,7 @@ export default function CheckoutScreen() {
     ) {
       Alert.alert(
         'Missing Fields',
-        'Please complete the line 1, city, and pincode fields.'
+        'Please complete address line 1, city and pincode.'
       );
 
       return false;
@@ -690,27 +677,21 @@ export default function CheckoutScreen() {
     return true;
   };
 
-  const handleAddressResolution = async (
-    saveToDb: boolean
-  ) => {
-    if (
-      !validateForm() ||
-      !customerId
-    ) {
+  async function handleAddressResolution(
+    saveToDatabase: boolean
+  ) {
+    if (!validateForm() || !customerId) {
       return;
     }
 
-    if (saveToDb) {
+    if (saveToDatabase) {
       try {
         await supabase
           .from('customer_addresses')
           .update({
             is_default: false,
           })
-          .eq(
-            'customer_id',
-            customerId
-          );
+          .eq('customer_id', customerId);
 
         const {
           data: newAddress,
@@ -720,22 +701,68 @@ export default function CheckoutScreen() {
           .insert({
             customer_id: customerId,
             is_default: true,
-            ...formAddress,
+            address_line1:
+              formAddress.address_line1,
+            address_line2:
+              formAddress.address_line2 || null,
+            landmark:
+              formAddress.landmark || null,
+            city: formAddress.city,
+            state: formAddress.state,
+            pin_code:
+              formAddress.pin_code,
+            latitude:
+              formAddress.latitude ?? null,
+            longitude:
+              formAddress.longitude ?? null,
           })
           .select()
           .single();
 
-        if (!error && newAddress) {
-          setAddress(newAddress);
-        } else {
+        if (error) {
+          console.error(
+            'Error saving address:',
+            error
+          );
+
           setAddress({
             ...formAddress,
           });
+        } else if (newAddress) {
+          setAddress({
+            id: newAddress.id,
+            address_line1:
+              newAddress.address_line1 || '',
+            address_line2:
+              newAddress.address_line2 || '',
+            landmark:
+              newAddress.landmark || '',
+            city: newAddress.city || '',
+            state: newAddress.state || '',
+            pin_code:
+              newAddress.pin_code || '',
+            latitude:
+              newAddress.latitude !== null &&
+              newAddress.latitude !==
+                undefined
+                ? Number(
+                    newAddress.latitude
+                  )
+                : null,
+            longitude:
+              newAddress.longitude !== null &&
+              newAddress.longitude !==
+                undefined
+                ? Number(
+                    newAddress.longitude
+                  )
+                : null,
+          });
         }
-      } catch (err) {
+      } catch (error) {
         console.error(
-          'Error recording default address mapping node:',
-          err
+          'Error saving address:',
+          error
         );
 
         setAddress({
@@ -749,172 +776,40 @@ export default function CheckoutScreen() {
     }
 
     setShowAddressForm(false);
-  };
-
-  const handleAppSelection = async (
-    appId: OnlineAppType
-  ) => {
-    setSelectedOnlineApp(appId);
-
-    const appConfig =
-      PAYMENT_APPS.find(
-        app => app.id === appId
-      );
-
-    if (!appConfig) return;
-
-    const targetUpiId =
-      vendorUpiId ||
-      'atharvavedpanditrao-1@okicici';
-
-    const targetShopName =
-      vendorShopName ||
-      'Merchant Partner';
-
-    const amountValue =
-      checkoutCharges.grandTotal.toString();
-
-    const queryParams =
-      `pa=${encodeURIComponent(targetUpiId)}` +
-      `&pn=${encodeURIComponent(targetShopName)}` +
-      `&am=${encodeURIComponent(amountValue)}` +
-      `&cu=${encodeURIComponent('INR')}` +
-      `&tn=${encodeURIComponent(preGeneratedOrderNumber)}`;
-
-    let targetUri = '';
-
-    if (appId === 'other') {
-      targetUri =
-        `upi://pay?${queryParams}`;
-    } else {
-      targetUri =
-        `${appConfig.scheme}?${queryParams}`;
-    }
-
-    console.log(
-      'Launching UPI Scheme:',
-      targetUri
-    );
-
-    try {
-      if (appId === 'other') {
-        const canOpen =
-          await Linking.canOpenURL(
-            targetUri
-          );
-
-        if (canOpen) {
-          await Linking.openURL(
-            targetUri
-          );
-
-          setPaymentSubmitted(true);
-          placeOrder();
-        } else {
-          setMissingAppModal({
-            visible: true,
-            appName:
-              'No UPI Apps found',
-          });
-        }
-      } else {
-        const canOpen =
-          await Linking.canOpenURL(
-            targetUri
-          );
-
-        if (canOpen) {
-          await Linking.openURL(
-            targetUri
-          );
-
-          setPaymentSubmitted(true);
-          placeOrder();
-        } else {
-          setMissingAppModal({
-            visible: true,
-            appName: appConfig.name,
-          });
-        }
-      }
-    } catch (error) {
-      console.error(
-        'App launch error:',
-        error
-      );
-
-      setMissingAppModal({
-        visible: true,
-        appName: appConfig.name,
-      });
-    }
-  };
-
-  function handleCopyOtp() {
-    const currentOtp =
-      successOrderDetails?.otp;
-
-    if (currentOtp) {
-      Clipboard.setString(currentOtp);
-
-      Alert.alert(
-        'Success',
-        'OTP copied successfully.'
-      );
-    }
   }
 
-  const handleMainButtonPress = () => {
-    if (paymentMethod === 'online') {
-      if (!selectedOnlineApp) {
-        Alert.alert(
-          'Please select a payment app.'
-        );
-
-        return;
-      }
-
-      handleAppSelection(
-        selectedOnlineApp
-      );
-    } else {
-      placeOrder();
-    }
-  };
-
+  /*
+   * PLACE MULTI-VENDOR ORDER
+   */
   async function placeOrder() {
-    if (isPlacingOrder) return;
-
-    if (
-      paymentMethod === 'online' &&
-      !selectedOnlineApp
-    ) {
-      Alert.alert(
-        'Please select a payment app.'
-      );
-
+    if (isPlacingOrder) {
       return;
     }
 
     try {
       setIsPlacingOrder(true);
 
-      const {
-        data: userData,
-      } = await supabase.auth.getUser();
+      /*
+       * AUTH
+       */
+      const { data: userData } =
+        await supabase.auth.getUser();
 
       if (!userData.user?.id) {
         Alert.alert(
           'Session Error',
-          'No active user session detected by the client instance.'
+          'Your session could not be verified. Please login again.'
         );
 
         return;
       }
 
+      /*
+       * CUSTOMER
+       */
       const {
-        data: testCustomer,
-        error: testCustomerErr,
+        data: currentCustomer,
+        error: currentCustomerError,
       } = await supabase
         .from('customers')
         .select('id')
@@ -922,361 +817,515 @@ export default function CheckoutScreen() {
           'auth_user_id',
           userData.user.id
         )
-        .single();
+        .maybeSingle();
 
       if (
-        testCustomerErr ||
-        !testCustomer
+        currentCustomerError ||
+        !currentCustomer
       ) {
         Alert.alert(
-          'Profile Resolution Failure',
-          'Could not locate a row in customers matching this user UID.'
+          'Profile Error',
+          'Could not locate your customer profile.'
         );
 
         return;
       }
 
+      /*
+       * ADDRESS
+       */
       if (!address) {
         Alert.alert(
-          'Error',
-          'Missing verified checkout destination address details.'
+          'Address Required',
+          'Please select or enter a delivery address.'
         );
 
         return;
       }
 
+      /*
+       * CART
+       */
       if (!cart.length) {
         Alert.alert(
           'Cart Empty',
-          'Please add products before checkout'
+          'Please add products before checkout.'
         );
 
         return;
       }
 
-      let activeAddress:
-        | SavedAddress
-        | null = address;
+      /*
+       * VALIDATE THAT EVERY ITEM HAS A VENDOR
+       */
+      const itemsWithoutVendor = cart.filter(
+        item => !item.vendor_id
+      );
 
-      if (!activeAddress?.id) {
+      if (itemsWithoutVendor.length > 0) {
+        Alert.alert(
+          'Checkout Error',
+          'One or more cart items are missing vendor information. Please remove those items and add them again.'
+        );
+
+        return;
+      }
+
+      /*
+       * ACTIVE ADDRESS MUST HAVE A DATABASE ID
+       */
+      let activeAddress: SavedAddress | null =
+        address;
+
+      if (!activeAddress.id) {
         const {
           data: freshAddress,
-          error: freshAddressErr,
+          error: freshAddressError,
         } = await supabase
-          .from(
-            'customer_addresses'
-          )
+          .from('customer_addresses')
           .select(
-            'id,address_line1,address_line2,landmark,city,state,pin_code,latitude,longitude'
+            'id, address_line1, address_line2, landmark, city, state, pin_code, latitude, longitude'
           )
           .eq(
             'customer_id',
-            testCustomer.id
+            currentCustomer.id
           )
-          .eq(
-            'is_default',
-            true
-          )
+          .eq('is_default', true)
           .maybeSingle();
 
         if (
-          !freshAddressErr &&
+          !freshAddressError &&
           freshAddress
         ) {
-          activeAddress =
-            freshAddress;
+          activeAddress = {
+            id: freshAddress.id,
+            address_line1:
+              freshAddress.address_line1 ||
+              '',
+            address_line2:
+              freshAddress.address_line2 ||
+              '',
+            landmark:
+              freshAddress.landmark || '',
+            city: freshAddress.city || '',
+            state:
+              freshAddress.state || '',
+            pin_code:
+              freshAddress.pin_code || '',
+            latitude:
+              freshAddress.latitude !== null &&
+              freshAddress.latitude !==
+                undefined
+                ? Number(
+                    freshAddress.latitude
+                  )
+                : null,
+            longitude:
+              freshAddress.longitude !== null &&
+              freshAddress.longitude !==
+                undefined
+                ? Number(
+                    freshAddress.longitude
+                  )
+                : null,
+          };
 
-          setAddress(
-            freshAddress
-          );
+          setAddress(activeAddress);
         }
       }
 
       if (!activeAddress?.id) {
         Alert.alert(
-          'Error',
-          'Unable to determine your delivery address. Please edit and save your address again.'
-        );
-
-        return;
-      }
-
-      const vendorId =
-        cart[0].vendor_id;
-
-      // Generate a random 6-digit numeric OTP.
-      const randomOtp =
-        Math.floor(
-          100000 +
-            Math.random() *
-              900000
-        ).toString();
-
-      console.log(
-        'Address State:',
-        address
-      );
-
-      console.log(
-        'Database Address:',
-        activeAddress
-      );
-
-      console.log(
-        'Address ID:',
-        activeAddress.id
-      );
-
-      const isOnline =
-        paymentMethod === 'online';
-
-      const orderPayload = {
-        order_number:
-          preGeneratedOrderNumber,
-
-        customer_id:
-          testCustomer.id,
-
-        customer_auth_id:
-          userData.user.id,
-
-        customer_address_id:
-          activeAddress.id,
-
-        vendor_id:
-          vendorId,
-
-        subtotal:
-          checkoutCharges.itemsTotal,
-
-        delivery_fee:
-          checkoutCharges.deliveryFee,
-
-        // Fixed ₹6 platform fee.
-        platform_fee:
-          checkoutCharges.platformFee,
-
-        total_amount:
-          checkoutCharges.grandTotal,
-
-        payment_status:
-          isOnline
-            ? 'pending_verification'
-            : 'pending',
-
-        order_status:
-          isOnline
-            ? 'payment_verification'
-            : 'pending',
-
-        actual_distance_km:
-          distance || 0,
-
-        chargeable_distance_km:
-          checkoutCharges.chargeableDistanceKm,
-
-        rider_earning:
-          checkoutCharges.riderEarning,
-
-        rivo_delivery_margin:
-          checkoutCharges.rivoDeliveryMargin,
-
-        vendor_commission:
-          checkoutCharges.vendorCommission,
-
-        vendor_earning:
-          checkoutCharges.vendorEarning,
-
-        settled_vendor: false,
-
-        settled_rider: false,
-
-        payment_method:
-          paymentMethod,
-
-        delivery_code:
-          randomOtp,
-      };
-
-      console.log(
-        'ORDER PAYLOAD',
-        orderPayload
-      );
-
-      const {
-        data: orderData,
-        error: orderError,
-      } = await supabase
-        .from('orders')
-        .insert(orderPayload)
-        .select()
-        .single();
-
-      if (orderError) {
-        Alert.alert(
-          'Order creation failed',
-          `Code: ${
-            orderError.code || 'N/A'
-          }\nMessage: ${
-            orderError.message ||
-            'N/A'
-          }`
-        );
-
-        return;
-      }
-
-      console.log(
-        'Inserted Order:',
-        orderData
-      );
-
-      const {
-        data: verifyOrder,
-      } = await supabase
-        .from('orders')
-        .select(
-          'id, customer_address_id'
-        )
-        .eq(
-          'id',
-          orderData.id
-        )
-        .single();
-
-      console.log(
-        'Verification:',
-        verifyOrder
-      );
-
-      if (
-        verifyOrder?.customer_address_id ==
-        null
-      ) {
-        Alert.alert(
-          'Error',
-          'Order created without delivery address. Checkout aborted.'
+          'Address Error',
+          'Unable to determine your delivery address. Please save your address again.'
         );
 
         return;
       }
 
       /*
-       * PAYMENT RECORD
+       * MULTI-VENDOR ORDER CREATION
        */
-      const paymentPayload: any = {
-        order_id:
-          orderData.id,
+      const createdOrderSummaries: CreatedVendorOrderSummary[] =
+        [];
 
-        amount:
-          checkoutCharges.grandTotal,
+      for (const group of vendorOrderGroups) {
+        /*
+         * SAFETY
+         */
+        if (!group.vendorId) {
+          throw new Error(
+            'A cart group is missing its vendor.'
+          );
+        }
 
-        payment_method:
-          paymentMethod === 'cod'
-            ? 'COD'
-            : 'ONLINE',
+        if (!group.items.length) {
+          continue;
+        }
 
-        payment_status:
-          'pending',
-      };
+        /*
+         * ORDER NUMBER
+         */
+        const orderNumber =
+          'ORD-' +
+          Math.floor(
+            100000 +
+              Math.random() * 900000
+          );
 
-      const {
-        error: paymentError,
-      } = await supabase
-        .from('payments')
-        .insert(
-          paymentPayload
-        );
+        /*
+         * DELIVERY OTP
+         */
+        const deliveryOtp =
+          Math.floor(
+            100000 +
+              Math.random() * 900000
+          ).toString();
 
-      if (paymentError) {
-        console.error(
-          'Payment entry instantiation failed:',
-          paymentError
-        );
+        const vendorDistance =
+          group.distanceKm !== null &&
+          Number.isFinite(
+            group.distanceKm
+          )
+            ? Number(
+                group.distanceKm.toFixed(3)
+              )
+            : null;
 
-        Alert.alert(
-          'Database Error',
-          'Could not record the global payment transaction tracking data row.'
-        );
-      }
+        /*
+         * ORDER PAYLOAD
+         *
+         * ONE ORDER = ONE VENDOR.
+         */
+        const orderPayload = {
+          order_number:
+            orderNumber,
 
-      /*
-       * ORDER ITEMS
-       */
-      for (const item of cart) {
-        await supabase
+          customer_id:
+            currentCustomer.id,
+
+          customer_auth_id:
+            userData.user.id,
+
+          customer_address_id:
+            activeAddress.id,
+
+          vendor_id:
+            group.vendorId,
+
+          subtotal:
+            Number(
+              group.billing.itemsTotal || 0
+            ),
+
+          delivery_fee:
+            Number(
+              group.billing.deliveryFee || 0
+            ),
+
+          platform_fee:
+            Number(
+              group.billing.platformFee || 0
+            ),
+
+          total_amount:
+            Number(
+              group.billing.grandTotal || 0
+            ),
+
+          payment_status:
+            'pending',
+
+          order_status:
+            'pending',
+
+          payment_method:
+            'COD',
+
+          delivery_code:
+            deliveryOtp,
+
+          delivery_distance_km:
+            vendorDistance,
+
+          actual_distance_km:
+            vendorDistance,
+
+          chargeable_distance_km:
+            Number(
+              group.billing
+                .chargeableDistanceKm || 0
+            ),
+
+          rider_earning:
+            Number(
+              group.billing.riderEarning || 0
+            ),
+
+          rivo_delivery_margin:
+            Number(
+              group.billing
+                .rivoDeliveryMargin || 0
+            ),
+
+          vendor_commission:
+            Number(
+              group.billing
+                .vendorCommission || 0
+            ),
+
+          vendor_earning:
+            Number(
+              group.billing.vendorEarning || 0
+            ),
+
+          settled_vendor:
+            false,
+
+          settled_rider:
+            false,
+        };
+
+        /*
+         * CREATE ORDER
+         */
+        const {
+          data: orderData,
+          error: orderError,
+        } = await supabase
+          .from('orders')
+          .insert(orderPayload)
+          .select('id, order_number')
+          .single();
+
+        if (
+          orderError ||
+          !orderData
+        ) {
+          throw new Error(
+            `Failed to create the order for ${group.storeName}. ${
+              orderError?.message ||
+              'Database insert failed.'
+            }`
+          );
+        }
+
+        /*
+         * CREATE ORDER ITEMS
+         */
+        const itemsToInsert =
+          group.items.map(item => {
+            const itemPrice =
+              Number(
+                item.price || 0
+              );
+
+            const itemQuantity =
+              Number(
+                item.quantity || 0
+              );
+
+            const itemTotal =
+              Number(
+                (
+                  itemPrice *
+                  itemQuantity
+                ).toFixed(2)
+              );
+
+            const gstRate =
+              Number(
+                item.gst_rate || 0
+              );
+
+            let taxableValue =
+              itemTotal;
+
+            let gstAmount = 0;
+
+            if (
+              gstRate > 0
+            ) {
+              taxableValue =
+                Number(
+                  (
+                    itemTotal /
+                    (1 +
+                      gstRate /
+                        100)
+                  ).toFixed(2)
+                );
+
+              gstAmount =
+                Number(
+                  (
+                    itemTotal -
+                    taxableValue
+                  ).toFixed(2)
+                );
+            }
+
+            const halfGst =
+              Number(
+                (
+                  gstAmount /
+                  2
+                ).toFixed(2)
+              );
+
+            return {
+              order_id:
+                orderData.id,
+
+              product_id:
+                item.id,
+
+              quantity:
+                itemQuantity,
+
+              unit_price:
+                itemPrice,
+
+              total_price:
+                itemTotal,
+
+              product_name:
+                item.name ||
+                'Product',
+
+              gst_rate:
+                gstRate,
+
+              taxable_value:
+                taxableValue,
+
+              gst_amount:
+                gstAmount,
+
+              cgst_amount:
+                halfGst,
+
+              sgst_amount:
+                halfGst,
+
+              igst_amount:
+                0,
+
+              hsn_code:
+                null,
+            };
+          });
+
+        const {
+          error: itemsError,
+        } = await supabase
           .from('order_items')
+          .insert(itemsToInsert);
+
+        if (itemsError) {
+          throw new Error(
+            `Failed to add items for ${group.storeName}. ${itemsError.message}`
+          );
+        }
+
+        /*
+         * COD PAYMENT RECORD
+         */
+        const {
+          error: paymentError,
+        } = await supabase
+          .from('payments')
           .insert({
             order_id:
               orderData.id,
 
-            product_id:
-              item.id,
+            amount:
+              Number(
+                group.billing
+                  .grandTotal || 0
+              ),
 
-            quantity:
-              item.quantity,
+            payment_method:
+              'COD',
 
-            unit_price:
-              item.price,
-
-            total_price:
-              item.price *
-              item.quantity,
-
-            gst_rate:
-              item.gst_rate ?? 0,
+            payment_status:
+              'pending',
           });
+
+        if (paymentError) {
+          throw new Error(
+            `Failed to create the payment record for ${group.storeName}. ${paymentError.message}`
+          );
+        }
+
+        /*
+         * SUCCESS SUMMARY
+         */
+        createdOrderSummaries.push({
+          orderId:
+            orderData.id,
+
+          orderNumber:
+            orderData.order_number ||
+            orderNumber,
+
+          storeName:
+            group.storeName,
+
+          totalAmount:
+            Number(
+              group.billing
+                .grandTotal || 0
+            ),
+
+          otp:
+            deliveryOtp,
+        });
       }
 
+      /*
+       * NOTHING CREATED
+       */
+      if (
+        createdOrderSummaries.length ===
+        0
+      ) {
+        throw new Error(
+          'No valid vendor orders could be created.'
+        );
+      }
+
+      /*
+       * ONLY CLEAR CART AFTER ALL
+       * ORDERS + ITEMS + PAYMENTS SUCCEED.
+       */
       clearCart();
 
-      setSuccessOrderDetails({
-        orderId:
-          orderData.id,
-
-        orderNumber:
-          preGeneratedOrderNumber,
-
-        totalAmount:
-          checkoutCharges.grandTotal,
-
-        eta:
-          '5-15 mins',
-
-        paymentMethod:
-          paymentMethod,
-
-        otp:
-          randomOtp,
-      });
-    } catch (error) {
+      setCreatedOrders(
+        createdOrderSummaries
+      );
+    } catch (error: any) {
       console.error(
-        'Error placing order:',
+        'Error placing multi-vendor order:',
         error
       );
 
       Alert.alert(
-        'Error',
-        JSON.stringify(error)
+        'Order Placement Error',
+        error?.message ||
+          'Could not complete checkout. Please try again.'
       );
     } finally {
       setIsPlacingOrder(false);
     }
   }
 
-  const isCoordinatesMissing =
-    (address !== null &&
-      (address.latitude == null ||
-        address.longitude == null)) ||
-    (cart.length > 0 &&
-      (!vendorLocation ||
-        vendorLocation.latitude == null ||
-        vendorLocation.longitude == null));
-
-  if (
-    loading ||
-    isCoordinatesMissing
-  ) {
+  /*
+   * LOADING
+   *
+   * Missing coordinates DO NOT block checkout.
+   */
+  if (loading) {
     return (
       <View
         style={
@@ -1285,15 +1334,78 @@ export default function CheckoutScreen() {
       >
         <ActivityIndicator
           size="large"
-          color="#10B981"
+          color="#22CC71"
         />
+
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
+          Preparing checkout...
+        </Text>
+      </View>
+    );
+  }
+
+  /*
+   * EMPTY CART
+   */
+  if (!cart.length && !createdOrders) {
+    return (
+      <View
+        style={
+          styles.emptyCartContainer
+        }
+      >
+        <Text
+          style={
+            styles.emptyCartTitle
+          }
+        >
+          Your cart is empty
+        </Text>
+
+        <Text
+          style={
+            styles.emptyCartSubtitle
+          }
+        >
+          Add some products before checkout.
+        </Text>
+
+        <Pressable
+          style={
+            styles.primaryButton
+          }
+          onPress={() =>
+            router.replace('/')
+          }
+        >
+          <Text
+            style={
+              styles.primaryButtonText
+            }
+          >
+            Continue Shopping
+          </Text>
+        </Pressable>
       </View>
     );
   }
 
   return (
-    <View style={styles.mainWrapper}>
-      <View style={styles.topNavBar}>
+    <View
+      style={
+        styles.mainWrapper
+      }
+    >
+      {/* HEADER */}
+      <View
+        style={
+          styles.topNavBar
+        }
+      >
         <Pressable
           onPress={() =>
             router.back()
@@ -1302,16 +1414,18 @@ export default function CheckoutScreen() {
             styles.backButtonIcon
           }
         >
-          <Text
-            style={
-              styles.backButtonTextSymbol
-            }
-          >
-            ←
-          </Text>
+          <Ionicons
+            name="arrow-back"
+            size={22}
+            color="#0D0D0D"
+          />
         </Pressable>
 
-        <Text style={styles.navTitle}>
+        <Text
+          style={
+            styles.navTitle
+          }
+        >
           Checkout
         </Text>
       </View>
@@ -1324,41 +1438,29 @@ export default function CheckoutScreen() {
           false
         }
       >
+        {/* PROFILE */}
         {!customerId && (
           <View
             style={[
               styles.card,
-              {
-                borderColor:
-                  '#F59E0B',
-                backgroundColor:
-                  '#FFFDF5',
-              },
+              styles.profileWarningCard,
             ]}
           >
             <Text
-              style={[
-                styles.sectionHeader,
-                {
-                  color:
-                    '#D97706',
-                },
-              ]}
+              style={
+                styles.profileWarningTitle
+              }
             >
-              👤 Link Delivery Profile
+              Complete Your Profile
             </Text>
 
             <Text
-              style={{
-                fontSize: 13,
-                color: '#64748B',
-                marginBottom: 12,
-                fontWeight: '500',
-              }}
+              style={
+                styles.profileWarningText
+              }
             >
-              Your account doesn't have a
-              delivery profile yet. Add your
-              info to activate quick checkout.
+              Add your name and phone number
+              to continue with checkout.
             </Text>
 
             <TextInput
@@ -1368,7 +1470,9 @@ export default function CheckoutScreen() {
               onChangeText={
                 setCustomerName
               }
-              style={styles.input}
+              style={
+                styles.input
+              }
             />
 
             <TextInput
@@ -1376,8 +1480,12 @@ export default function CheckoutScreen() {
               placeholderTextColor="#94A3B8"
               keyboardType="phone-pad"
               value={phone}
-              onChangeText={setPhone}
-              style={styles.input}
+              onChangeText={
+                setPhone
+              }
+              style={
+                styles.input
+              }
             />
 
             <Pressable
@@ -1388,35 +1496,21 @@ export default function CheckoutScreen() {
                 creatingProfile
               }
               style={({ pressed }) => [
-                {
-                  backgroundColor:
-                    '#D97706',
-                  borderRadius: 12,
-                  paddingVertical: 12,
-                  alignItems:
-                    'center',
-                  justifyContent:
-                    'center',
-                  marginTop: 12,
-                },
+                styles.profileCreateButton,
                 pressed &&
                   styles.microInteractionState,
               ]}
             >
               {creatingProfile ? (
                 <ActivityIndicator
-                  color="#FFF"
+                  color="#FFFFFF"
                   size="small"
                 />
               ) : (
                 <Text
-                  style={{
-                    color:
-                      '#FFFFFF',
-                    fontSize: 14,
-                    fontWeight:
-                      '800',
-                  }}
+                  style={
+                    styles.profileCreateButtonText
+                  }
                 >
                   Create & Continue
                 </Text>
@@ -1425,74 +1519,55 @@ export default function CheckoutScreen() {
           </View>
         )}
 
+        {/* DELIVERY INFORMATION */}
         <View
-          style={styles.etaCard}
+          style={
+            styles.deliveryInfoCard
+          }
         >
           <View
             style={
-              styles.etaIconWrapper
+              styles.deliveryInfoDot
             }
-          >
-            <Text
-              style={styles.etaIcon}
-            >
-              ⚡
-            </Text>
-          </View>
+          />
 
           <View
             style={
-              styles.etaTextContent
+              styles.deliveryInfoContent
             }
           >
             <Text
-              style={styles.etaTitle}
+              style={
+                styles.deliveryInfoTitle
+              }
             >
-              Instant Delivery to your location
+              Delivery timing
             </Text>
 
             <Text
-              style={styles.etaTime}
-            >
-              Arriving in 5 - 15 Mins
-            </Text>
-          </View>
-
-          {distance !== null && (
-            <View
               style={
-                styles.distanceTag
+                styles.deliveryInfoText
               }
             >
-              <Text
-                style={
-                  styles.distanceTagText
-                }
-              >
-                {distance.toFixed(
-                  1
-                )}{' '}
-                km
-              </Text>
-            </View>
-          )}
+              Your delivery time depends on
+              the store and distance.
+            </Text>
+          </View>
         </View>
 
-        {/* DELIVERY ADDRESS */}
-        <View style={styles.card}>
-          <View
+        {/* ADDRESS */}
+        <View
+          style={
+            styles.card
+          }
+        >
+          <Text
             style={
-              styles.sectionHeaderRow
+              styles.sectionHeader
             }
           >
-            <Text
-              style={
-                styles.sectionHeader
-              }
-            >
-              🎒 Delivery Address
-            </Text>
-          </View>
+            Delivery Address
+          </Text>
 
           {address &&
           !showAddressForm ? (
@@ -1515,27 +1590,23 @@ export default function CheckoutScreen() {
                     styles.addressText
                   }
                 >
-                  {address.address_line2}
+                  {
+                    address.address_line2
+                  }
                 </Text>
               )}
 
               {!!address.landmark && (
-                <View
+                <Text
                   style={
-                    styles.landmarkWrapper
+                    styles.addressSubtext
                   }
                 >
-                  <Text
-                    style={
-                      styles.addressSubtext
-                    }
-                  >
-                    📍 Landmark:{' '}
-                    {
-                      address.landmark
-                    }
-                  </Text>
-                </View>
+                  Landmark:{' '}
+                  {
+                    address.landmark
+                  }
+                </Text>
               )}
 
               <Text
@@ -1563,7 +1634,7 @@ export default function CheckoutScreen() {
                     styles.changeAddressBtnText
                   }
                 >
-                  Edit Address Details
+                  Edit Address
                 </Text>
               </Pressable>
             </View>
@@ -1578,8 +1649,7 @@ export default function CheckoutScreen() {
                   styles.errorText
                 }
               >
-                No shipping destination
-                configured.
+                No delivery address configured.
               </Text>
 
               <Pressable
@@ -1588,10 +1658,8 @@ export default function CheckoutScreen() {
                 }
                 style={[
                   styles.primaryButton,
-                  !customerId && {
-                    backgroundColor:
-                      '#CBD5E1',
-                  },
+                  !customerId &&
+                    styles.disabledButton,
                 ]}
                 onPress={() =>
                   setShowAddressForm(
@@ -1604,7 +1672,7 @@ export default function CheckoutScreen() {
                     styles.primaryButtonText
                   }
                 >
-                  Add New Address
+                  Add Address
                 </Text>
               </Pressable>
             </View>
@@ -1622,13 +1690,15 @@ export default function CheckoutScreen() {
                 value={
                   formAddress.address_line1
                 }
-                onChangeText={t =>
+                onChangeText={value =>
                   updateFormField(
                     'address_line1',
-                    t
+                    value
                   )
                 }
-                style={styles.input}
+                style={
+                  styles.input
+                }
               />
 
               <TextInput
@@ -1637,13 +1707,15 @@ export default function CheckoutScreen() {
                 value={
                   formAddress.address_line2
                 }
-                onChangeText={t =>
+                onChangeText={value =>
                   updateFormField(
                     'address_line2',
-                    t
+                    value
                   )
                 }
-                style={styles.input}
+                style={
+                  styles.input
+                }
               />
 
               <TextInput
@@ -1652,17 +1724,21 @@ export default function CheckoutScreen() {
                 value={
                   formAddress.landmark
                 }
-                onChangeText={t =>
+                onChangeText={value =>
                   updateFormField(
                     'landmark',
-                    t
+                    value
                   )
                 }
-                style={styles.input}
+                style={
+                  styles.input
+                }
               />
 
               <View
-                style={styles.row}
+                style={
+                  styles.row
+                }
               >
                 <TextInput
                   placeholder="City *"
@@ -1670,18 +1746,15 @@ export default function CheckoutScreen() {
                   value={
                     formAddress.city
                   }
-                  onChangeText={t =>
+                  onChangeText={value =>
                     updateFormField(
                       'city',
-                      t
+                      value
                     )
                   }
                   style={[
                     styles.input,
-                    {
-                      flex: 1,
-                      marginRight: 8,
-                    },
+                    styles.halfInputLeft,
                   ]}
                 />
 
@@ -1691,17 +1764,15 @@ export default function CheckoutScreen() {
                   value={
                     formAddress.state
                   }
-                  onChangeText={t =>
+                  onChangeText={value =>
                     updateFormField(
                       'state',
-                      t
+                      value
                     )
                   }
                   style={[
                     styles.input,
-                    {
-                      flex: 1,
-                    },
+                    styles.halfInputRight,
                   ]}
                 />
               </View>
@@ -1713,13 +1784,15 @@ export default function CheckoutScreen() {
                 value={
                   formAddress.pin_code
                 }
-                onChangeText={t =>
+                onChangeText={value =>
                   updateFormField(
                     'pin_code',
-                    t
+                    value
                   )
                 }
-                style={styles.input}
+                style={
+                  styles.input
+                }
               />
 
               <Text
@@ -1732,16 +1805,14 @@ export default function CheckoutScreen() {
               </Text>
 
               <View
-                style={styles.row}
+                style={
+                  styles.row
+                }
               >
                 <Pressable
                   style={[
                     styles.actionChip,
-                    {
-                      backgroundColor:
-                        '#10B981',
-                      marginRight: 8,
-                    },
+                    styles.saveDefaultChip,
                   ]}
                   onPress={() =>
                     handleAddressResolution(
@@ -1761,10 +1832,7 @@ export default function CheckoutScreen() {
                 <Pressable
                   style={[
                     styles.actionChip,
-                    {
-                      backgroundColor:
-                        '#64748B',
-                    },
+                    styles.useOnceChip,
                   ]}
                   onPress={() =>
                     handleAddressResolution(
@@ -1785,85 +1853,192 @@ export default function CheckoutScreen() {
           )}
         </View>
 
-        {/* ORDER SUMMARY */}
-        <View style={styles.card}>
-          <Text
-            style={styles.sectionHeader}
+        {/* MULTI-VENDOR ORDER */}
+        <View
+          style={
+            styles.card
+          }
+        >
+          <View
+            style={
+              styles.sectionHeaderRow
+            }
           >
-            📦 Order Summary ({cart.length}{' '}
-            items)
+            <Text
+              style={
+                styles.sectionHeader
+              }
+            >
+              Your Order
+            </Text>
+
+            <Text
+              style={
+                styles.itemCountText
+              }
+            >
+              {cart.length}{' '}
+              {cart.length === 1
+                ? 'item'
+                : 'items'}
+            </Text>
+          </View>
+
+          {vendorOrderGroups.map(
+            (group, groupIndex) => (
+              <View
+                key={
+                  group.vendorId
+                }
+                style={[
+                  styles.vendorGroupBlock,
+                  groupIndex >
+                    0 &&
+                    styles.vendorGroupSeparator,
+                ]}
+              >
+                <View
+                  style={
+                    styles.vendorHeaderRow
+                  }
+                >
+                  <Text
+                    style={
+                      styles.vendorStoreTitle
+                    }
+                  >
+                    {group.storeName}
+                  </Text>
+
+                  {group.distanceKm !==
+                    null && (
+                    <Text
+                      style={
+                        styles.vendorDistanceText
+                      }
+                    >
+                      {group.distanceKm.toFixed(
+                        1
+                      )}{' '}
+                      km
+                    </Text>
+                  )}
+                </View>
+
+                {group.items.map(
+                  (
+                    item,
+                    itemIndex
+                  ) => (
+                    <View
+                      key={`${group.vendorId}-${item.id}-${itemIndex}`}
+                      style={
+                        styles.summaryItemRow
+                      }
+                    >
+                      <View
+                        style={
+                          styles.summaryItemContent
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.itemName
+                          }
+                          numberOfLines={
+                            2
+                          }
+                        >
+                          {item.name}
+                        </Text>
+
+                        <Text
+                          style={
+                            styles.itemQuantity
+                          }
+                        >
+                          Qty:{' '}
+                          {
+                            item.quantity
+                          }{' '}
+                          × ₹
+                          {Number(
+                            item.price ||
+                              0
+                          ).toFixed(
+                            2
+                          )}
+                        </Text>
+                      </View>
+
+                      <Text
+                        style={
+                          styles.itemPrice
+                        }
+                      >
+                        ₹
+                        {(
+                          Number(
+                            item.price ||
+                              0
+                          ) *
+                          Number(
+                            item.quantity ||
+                              0
+                          )
+                        ).toFixed(2)}
+                      </Text>
+                    </View>
+                  )
+                )}
+
+                <View
+                  style={
+                    styles.vendorSubtotalRow
+                  }
+                >
+                  <Text
+                    style={
+                      styles.vendorSubtotalLabel
+                    }
+                  >
+                    Store Subtotal
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.vendorSubtotalValue
+                    }
+                  >
+                    ₹
+                    {group.subtotal.toFixed(
+                      2
+                    )}
+                  </Text>
+                </View>
+              </View>
+            )
+          )}
+        </View>
+
+        {/* BILL DETAILS */}
+        <View
+          style={
+            styles.card
+          }
+        >
+          <Text
+            style={
+              styles.sectionHeader
+            }
+          >
+            Bill Details
           </Text>
 
           <View
             style={
-              styles.summaryListBlock
+              styles.breakdownRow
             }
-          >
-            {cart.map(
-              (item, index) => (
-                <View
-                  key={
-                    item.id ||
-                    index
-                  }
-                  style={[
-                    styles.row,
-                    styles.summaryItemRow,
-                  ]}
-                >
-                  <View
-                    style={{
-                      flex: 1,
-                    }}
-                  >
-                    <Text
-                      style={
-                        styles.itemName
-                      }
-                    >
-                      {item.name}
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.itemQuantity
-                      }
-                    >
-                      Quantity:{' '}
-                      {
-                        item.quantity
-                      }
-                    </Text>
-                  </View>
-
-                  <Text
-                    style={
-                      styles.itemPrice
-                    }
-                  >
-                    ₹
-                    {item.price *
-                      item.quantity}
-                  </Text>
-                </View>
-              )
-            )}
-          </View>
-        </View>
-
-        {/* BILL DETAILS */}
-        <View style={styles.card}>
-          <Text
-            style={styles.sectionHeader}
-          >
-            📑 Bill Details
-          </Text>
-
-          <View
-            style={[
-              styles.row,
-              styles.breakdownRow,
-            ]}
           >
             <Text
               style={
@@ -1879,17 +2054,16 @@ export default function CheckoutScreen() {
               }
             >
               ₹
-              {
-                checkoutCharges.itemsTotal
-              }
+              {aggregateBilling.itemsTotal.toFixed(
+                2
+              )}
             </Text>
           </View>
 
           <View
-            style={[
-              styles.row,
-              styles.breakdownRow,
-            ]}
+            style={
+              styles.breakdownRow
+            }
           >
             <Text
               style={
@@ -1905,17 +2079,16 @@ export default function CheckoutScreen() {
               }
             >
               ₹
-              {
-                checkoutCharges.deliveryFee
-              }
+              {aggregateBilling.deliveryFee.toFixed(
+                2
+              )}
             </Text>
           </View>
 
           <View
-            style={[
-              styles.row,
-              styles.breakdownRow,
-            ]}
+            style={
+              styles.breakdownRow
+            }
           >
             <Text
               style={
@@ -1931,24 +2104,25 @@ export default function CheckoutScreen() {
               }
             >
               ₹
-              {
-                checkoutCharges.platformFee
-              }
+              {aggregateBilling.platformFee.toFixed(
+                2
+              )}
             </Text>
           </View>
 
           <Text
-            style={styles.gstNotice}
+            style={
+              styles.gstNotice
+            }
           >
-            Prices shown are inclusive of applicable
-            GST.
+            Prices shown are inclusive of
+            applicable GST.
           </Text>
 
           <View
-            style={[
-              styles.row,
-              styles.grandTotalRow,
-            ]}
+            style={
+              styles.grandTotalRow
+            }
           >
             <Text
               style={
@@ -1964,20 +2138,61 @@ export default function CheckoutScreen() {
               }
             >
               ₹
-              {
-                checkoutCharges.grandTotal
-              }
+              {aggregateBilling.grandTotal.toFixed(
+                2
+              )}
             </Text>
           </View>
         </View>
 
-        {/* PAYMENT METHODS */}
-        <View style={styles.card}>
+        {/* PAYMENT */}
+        <View
+          style={
+            styles.card
+          }
+        >
           <Text
-            style={styles.sectionHeader}
+            style={
+              styles.sectionHeader
+            }
           >
-            🎒 Payment Method
+            Payment Method
           </Text>
+
+          <View
+            style={
+              styles.paymentOptionSelected
+            }
+          >
+            <View
+              style={
+                styles.radioFilled
+              }
+            />
+
+            <View
+              style={
+                styles.paymentTextWrapper
+              }
+            >
+              <Text
+                style={
+                  styles.paymentMethodNameText
+                }
+              >
+                Cash on Delivery
+              </Text>
+
+              <Text
+                style={
+                  styles.paymentMethodSubtitleText
+                }
+              >
+                Pay cash to the rider when
+                your order is delivered.
+              </Text>
+            </View>
+          </View>
 
           <View
             style={
@@ -1986,285 +2201,23 @@ export default function CheckoutScreen() {
           >
             <Text
               style={
-                styles.noticeCardIcon
+                styles.noticeCardBody
               }
             >
-              🚧
+              We're currently working on
+              bringing online payments to
+              RivoCity.
+              {'\n\n'}
+              For now, you can safely place
+              your order using Cash on
+              Delivery.
+              {'\n\n'}
+              Thank you for understanding
+              and for using RivoCity.
             </Text>
-
-            <View
-              style={
-                styles.noticeCardTextWrapper
-              }
-            >
-              <Text
-                style={
-                  styles.noticeCardTitle
-                }
-              >
-                Online Payments Coming Soon
-              </Text>
-
-              <Text
-                style={
-                  styles.noticeCardBody
-                }
-              >
-                We are currently improving our
-                online payment experience. For now,
-                please choose Cash on Delivery. You
-                can also pay online directly to the
-                rider at the time of delivery if
-                required.
-              </Text>
-            </View>
           </View>
-
-          <Pressable
-            onPress={() => {
-              setPaymentMethod('cod');
-              setPaymentSubmitted(
-                false
-              );
-            }}
-            style={({ pressed }) => [
-              styles.row,
-              paymentMethod === 'cod'
-                ? styles.paymentOptionSelected
-                : styles.paymentOptionUnselected,
-              {
-                marginBottom: 12,
-              },
-              pressed &&
-                styles.microInteractionState,
-            ]}
-          >
-            <View
-              style={
-                paymentMethod === 'cod'
-                  ? styles.radioFilled
-                  : styles.radioEmpty
-              }
-            />
-
-            <Text
-              style={
-                styles.paymentMethodNameText
-              }
-            >
-              Cash on Delivery
-            </Text>
-          </Pressable>
-
-          <View
-            style={[
-              styles.row,
-              styles.paymentOptionDisabled,
-              {
-                justifyContent:
-                  'space-between',
-              },
-            ]}
-          >
-            <View
-              style={styles.row}
-            >
-              <View
-                style={
-                  styles.radioDisabled
-                }
-              />
-
-              <Text
-                style={
-                  styles.paymentMethodDisabledText
-                }
-              >
-                Online Payment
-              </Text>
-            </View>
-
-            <View
-              style={
-                styles.comingSoonBadge
-              }
-            >
-              <Text
-                style={
-                  styles.comingSoonBadgeText
-                }
-              >
-                Coming Soon
-              </Text>
-            </View>
-          </View>
-
-          {paymentMethod ===
-            'online' && (
-            <View
-              style={
-                styles.modernAppsContainer
-              }
-            >
-              {PAYMENT_APPS.map(
-                app => {
-                  const isSelected =
-                    selectedOnlineApp ===
-                    app.id;
-
-                  return (
-                    <Pressable
-                      key={
-                        app.id
-                      }
-                      onPress={() =>
-                        handleAppSelection(
-                          app.id
-                        )
-                      }
-                      style={({ pressed }) => [
-                        styles.modernAppCard,
-                        isSelected &&
-                          styles.modernAppCardSelected,
-                        pressed &&
-                          styles.microInteractionState,
-                      ]}
-                    >
-                      <View
-                        style={[
-                          styles.appIconCircle,
-                          {
-                            backgroundColor:
-                              app.bgColor,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.appIconInitial,
-                            {
-                              color:
-                                app.color,
-                            },
-                          ]}
-                        >
-                          {app.initial}
-                        </Text>
-                      </View>
-
-                      <View
-                        style={
-                          styles.appTextDetails
-                        }
-                      >
-                        <Text
-                          style={
-                            styles.appNameTitle
-                          }
-                        >
-                          {app.name}
-                        </Text>
-
-                        <Text
-                          style={
-                            styles.appSubtitleText
-                          }
-                        >
-                          {app.subtitle}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  );
-                }
-              )}
-            </View>
-          )}
         </View>
       </ScrollView>
-
-      {/* APP NOT INSTALLED MODAL */}
-      <Modal
-        visible={
-          missingAppModal.visible
-        }
-        transparent
-        animationType="fade"
-        onRequestClose={() =>
-          setMissingAppModal({
-            visible: false,
-            appName: '',
-          })
-        }
-      >
-        <View
-          style={
-            styles.missingAppOverlay
-          }
-        >
-          <View
-            style={
-              styles.missingAppCard
-            }
-          >
-            <Text
-              style={
-                styles.missingAppTitle
-              }
-            >
-              {
-                missingAppModal.appName
-              }{' '}
-              is not installed on this device.
-            </Text>
-
-            <View
-              style={
-                styles.missingAppButtonRow
-              }
-            >
-              <Pressable
-                style={
-                  styles.missingAppCancelBtn
-                }
-                onPress={() =>
-                  setMissingAppModal({
-                    visible: false,
-                    appName: '',
-                  })
-                }
-              >
-                <Text
-                  style={
-                    styles.missingAppCancelText
-                  }
-                >
-                  Cancel
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={
-                  styles.missingAppChooseBtn
-                }
-                onPress={() =>
-                  setMissingAppModal({
-                    visible: false,
-                    appName: '',
-                  })
-                }
-              >
-                <Text
-                  style={
-                    styles.missingAppChooseText
-                  }
-                >
-                  Choose Another App
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* STICKY FOOTER */}
       <View
@@ -2291,54 +2244,40 @@ export default function CheckoutScreen() {
             }
           >
             ₹
-            {
-              checkoutCharges.grandTotal
-            }
+            {aggregateBilling.grandTotal.toFixed(
+              2
+            )}
           </Text>
         </View>
 
         <Pressable
           onPress={
-            handleMainButtonPress
+            placeOrder
           }
           disabled={
             !address ||
             isPlacingOrder ||
-            !customerId
+            !customerId ||
+            !vendorOrderGroups.length
           }
-          style={({ pressed }) => {
-            const styleArray: any[] =
-              [
-                styles.stickyOrderPlacementButton,
-              ];
-
-            if (
-              !address ||
+          style={({ pressed }) => [
+            styles.stickyOrderPlacementButton,
+            (!address ||
               isPlacingOrder ||
-              !customerId
-            ) {
-              styleArray.push(
-                styles.disabledButton
-              );
-            }
-
-            if (
-              pressed &&
+              !customerId ||
+              !vendorOrderGroups.length) &&
+              styles.disabledButton,
+            pressed &&
               address &&
               !isPlacingOrder &&
-              customerId
-            ) {
-              styleArray.push(
-                styles.microInteractionState
-              );
-            }
-
-            return styleArray;
-          }}
+              customerId &&
+              vendorOrderGroups.length > 0 &&
+              styles.microInteractionState,
+          ]}
         >
           {isPlacingOrder ? (
             <ActivityIndicator
-              color="#FFF"
+              color="#FFFFFF"
               size="small"
             />
           ) : (
@@ -2347,10 +2286,7 @@ export default function CheckoutScreen() {
                 styles.stickyButtonText
               }
             >
-              {paymentMethod ===
-              'cod'
-                ? 'Place Order'
-                : 'Pay Securely'}
+              Place Order
             </Text>
           )}
         </Pressable>
@@ -2359,11 +2295,10 @@ export default function CheckoutScreen() {
       {/* SUCCESS MODAL */}
       <Modal
         visible={
-          successOrderDetails !==
-          null
+          createdOrders !== null
         }
         animationType="none"
-        transparent={true}
+        transparent
       >
         <View
           style={
@@ -2386,13 +2321,12 @@ export default function CheckoutScreen() {
             ]}
           >
             <ScrollView
-              style={{
-                width: '100%',
-              }}
-              contentContainerStyle={{
-                alignItems:
-                  'center',
-              }}
+              style={
+                styles.successScroll
+              }
+              contentContainerStyle={
+                styles.successScrollContent
+              }
               showsVerticalScrollIndicator={
                 false
               }
@@ -2425,13 +2359,11 @@ export default function CheckoutScreen() {
                   },
                 ]}
               >
-                <Text
-                  style={
-                    styles.successBadgeText
-                  }
-                >
-                  ✓
-                </Text>
+                <Ionicons
+                  name="checkmark"
+                  size={32}
+                  color="#FFFFFF"
+                />
               </Animated.View>
 
               <Text
@@ -2439,7 +2371,7 @@ export default function CheckoutScreen() {
                   styles.successTitle
                 }
               >
-                Thank you for choosing Rivo ❤️
+                Order Placed Successfully
               </Text>
 
               <Text
@@ -2447,273 +2379,161 @@ export default function CheckoutScreen() {
                   styles.successSubtitle
                 }
               >
-                See you again in{' '}
-                {address?.city ||
-                  'your city'}{' '}
-                👋
+                Thank you for ordering on
+                RivoCity
               </Text>
 
-              {successOrderDetails?.paymentMethod ===
-                'online' && (
-                <View
-                  style={
-                    styles.verificationBanner
-                  }
-                >
-                  <Text
+              <Text
+                style={
+                  styles.successOrderCountText
+                }
+              >
+                {createdOrders?.length ===
+                1
+                  ? 'Your order has been sent to the store.'
+                  : `${createdOrders?.length} vendor orders have been created.`}
+              </Text>
+
+              {createdOrders?.map(
+                (
+                  order,
+                  index
+                ) => (
+                  <View
+                    key={
+                      order.orderId
+                    }
                     style={
-                      styles.verificationBannerText
+                      styles.successMetaCard
                     }
                   >
-                    Your payment is being
-                    verified. The vendor will
-                    begin preparing your order
-                    after verification.
-                  </Text>
-                </View>
+                    <View
+                      style={
+                        styles.successVendorHeader
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.successVendorStoreHeader
+                        }
+                      >
+                        {
+                          order.storeName
+                        }
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.successVendorOrderNumberBadge
+                        }
+                      >
+                        {
+                          order.orderNumber
+                        }
+                      </Text>
+                    </View>
+
+                    <View
+                      style={
+                        styles.metaItemSeparator
+                      }
+                    />
+
+                    <View
+                      style={
+                        styles.metaItemRow
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.metaCardLabel
+                        }
+                      >
+                        Payment
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.metaCardValue
+                        }
+                      >
+                        Cash on Delivery
+                      </Text>
+                    </View>
+
+                    <View
+                      style={
+                        styles.metaItemRow
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.metaCardLabel
+                        }
+                      >
+                        Order Amount
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.metaCardValueHighlight
+                        }
+                      >
+                        ₹
+                        {order.totalAmount.toFixed(
+                          2
+                        )}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={
+                        styles.metaItemSeparator
+                      }
+                    />
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.trackOrderInlineButton,
+                        pressed &&
+                          styles.microInteractionState,
+                      ]}
+                      onPress={() => {
+                        setCreatedOrders(
+                          null
+                        );
+
+                        router.replace({
+                          pathname:
+                            '/orders/[id]',
+                          params: {
+                            id: order.orderId,
+                          },
+                        });
+                      }}
+                    >
+                      <Text
+                        style={
+                          styles.trackOrderInlineButtonText
+                        }
+                      >
+                        Track Order
+                      </Text>
+                    </Pressable>
+
+                    {index <
+                      (createdOrders?.length ??
+                        0) -
+                        1 && (
+                      <View
+                        style={
+                          styles.successOrderDivider
+                        }
+                      />
+                    )}
+                  </View>
+                )
               )}
-
-              <View
-                style={
-                  styles.successMetaCard
-                }
-              >
-                <View
-                  style={[
-                    styles.row,
-                    styles.metaItemRow,
-                  ]}
-                >
-                  <Text
-                    style={
-                      styles.metaCardLabel
-                    }
-                  >
-                    Order Number
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.metaCardValue
-                    }
-                  >
-                    {
-                      successOrderDetails?.orderNumber
-                    }
-                  </Text>
-                </View>
-
-                <View
-                  style={
-                    styles.metaItemSeparator
-                  }
-                />
-
-                <View
-                  style={[
-                    styles.row,
-                    styles.metaItemRow,
-                  ]}
-                >
-                  <Text
-                    style={
-                      styles.metaCardLabel
-                    }
-                  >
-                    Estimated Delivery
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.metaCardValue
-                    }
-                  >
-                    {
-                      successOrderDetails?.eta
-                    }
-                  </Text>
-                </View>
-
-                <View
-                  style={
-                    styles.metaItemSeparator
-                  }
-                />
-
-                <View
-                  style={[
-                    styles.row,
-                    styles.metaItemRow,
-                  ]}
-                >
-                  <Text
-                    style={
-                      styles.metaCardLabel
-                    }
-                  >
-                    Total Paid
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.metaCardValueHighlight
-                    }
-                  >
-                    ₹
-                    {
-                      successOrderDetails?.totalAmount
-                    }
-                  </Text>
-                </View>
-
-                <View
-                  style={
-                    styles.metaItemSeparator
-                  }
-                />
-
-                <View
-                  style={[
-                    styles.row,
-                    styles.metaItemRow,
-                  ]}
-                >
-                  <Text
-                    style={
-                      styles.metaCardLabel
-                    }
-                  >
-                    Payment Status
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.metaCardValue
-                    }
-                  >
-                    {successOrderDetails?.paymentMethod ===
-                    'cod'
-                      ? 'Cash on Delivery'
-                      : 'Pending Verification'}
-                  </Text>
-                </View>
-              </View>
-
-              {/* DELIVERY OTP */}
-              <View
-                style={
-                  styles.otpCardWrapper
-                }
-              >
-                <Text
-                  style={
-                    styles.otpSectionTitle
-                  }
-                >
-                  Delivery OTP
-                </Text>
-
-                <Text
-                  style={
-                    styles.otpSectionSubtitle
-                  }
-                >
-                  Share this OTP with the rider ONLY
-                  after receiving your complete order.
-                </Text>
-
-                <View
-                  style={
-                    styles.otpValuePillBox
-                  }
-                >
-                  <Text
-                    style={
-                      styles.otpLargeDigitsText
-                    }
-                  >
-                    {successOrderDetails?.otp
-                      ? successOrderDetails.otp
-                      : 'Generating OTP...'}
-                  </Text>
-                </View>
-
-                <Pressable
-                  onPress={
-                    handleCopyOtp
-                  }
-                  style={({ pressed }) => [
-                    styles.copyOtpInlineTextBtn,
-                    pressed &&
-                      styles.microInteractionState,
-                  ]}
-                >
-                  <Text
-                    style={
-                      styles.copyOtpInlineTextBtnLabel
-                    }
-                  >
-                    [ Copy OTP ]
-                  </Text>
-                </Pressable>
-
-                <View
-                  style={
-                    styles.otpSafetyNoticeDivider
-                  }
-                />
-
-                <Text
-                  style={
-                    styles.otpSafetyNoticeHeading
-                  }
-                >
-                  Security
-                </Text>
-
-                <Text
-                  style={
-                    styles.otpSafetyNoticeDescription
-                  }
-                >
-                  Never share this OTP before you
-                  receive your complete order.
-                </Text>
-              </View>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.trackOrderButton,
-                  pressed &&
-                    styles.microInteractionState,
-                ]}
-                onPress={() => {
-                  const oId =
-                    successOrderDetails?.orderId;
-
-                  setSuccessOrderDetails(
-                    null
-                  );
-
-                  if (oId) {
-                    router.replace({
-                      pathname:
-                        '/orders/[id]',
-                      params: {
-                        id: oId,
-                      },
-                    });
-                  }
-                }}
-              >
-                <Text
-                  style={
-                    styles.trackOrderButtonText
-                  }
-                >
-                  Track Order
-                </Text>
-              </Pressable>
 
               <Pressable
                 style={({ pressed }) => [
@@ -2722,7 +2542,7 @@ export default function CheckoutScreen() {
                     styles.microInteractionState,
                 ]}
                 onPress={() => {
-                  setSuccessOrderDetails(
+                  setCreatedOrders(
                     null
                   );
 
@@ -2760,6 +2580,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
   },
 
+  loadingText: {
+    marginTop: 12,
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+
+  emptyCartContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: '#FAFAFA',
+  },
+
+  emptyCartTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0D0D0D',
+  },
+
+  emptyCartSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    marginTop: 6,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+
   topNavBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2776,21 +2625,15 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
 
-  backButtonTextSymbol: {
-    fontSize: 22,
-    color: '#0F172A',
-    fontWeight: '600',
-  },
-
   navTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: '#0D0D0D',
   },
 
   container: {
     padding: 16,
-    paddingBottom: 160,
+    paddingBottom: 170,
   },
 
   card: {
@@ -2813,7 +2656,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#1E293B',
+    color: '#0D0D0D',
     marginBottom: 14,
   },
 
@@ -2821,63 +2664,85 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    width: '100%',
   },
 
-  etaCard: {
+  itemCountText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+    marginBottom: 14,
+  },
+
+  profileWarningCard: {
+    borderColor: '#F97316',
+    backgroundColor: '#FFF7ED',
+  },
+
+  profileWarningTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#F97316',
+    marginBottom: 6,
+  },
+
+  profileWarningText: {
+    fontSize: 13,
+    color: '#64748B',
+    marginBottom: 12,
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+
+  profileCreateButton: {
+    backgroundColor: '#F97316',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+
+  profileCreateButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  deliveryInfoCard: {
     flexDirection: 'row',
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#E8FBF0',
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: '#22CC71',
     borderRadius: 16,
     padding: 14,
     marginBottom: 16,
     alignItems: 'center',
   },
 
-  etaIconWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#10B981',
-    alignItems: 'center',
-    justifyContent: 'center',
+  deliveryInfoDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22CC71',
     marginRight: 12,
   },
 
-  etaIcon: {
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
-
-  etaTextContent: {
+  deliveryInfoContent: {
     flex: 1,
   },
 
-  etaTitle: {
-    fontSize: 12,
-    color: '#047857',
-    fontWeight: '600',
+  deliveryInfoTitle: {
+    fontSize: 13,
+    color: '#0D0D0D',
+    fontWeight: '700',
   },
 
-  etaTime: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#065F46',
+  deliveryInfoText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
     marginTop: 2,
-  },
-
-  distanceTag: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-
-  distanceTagText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
+    lineHeight: 17,
   },
 
   input: {
@@ -2888,13 +2753,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: '#0F172A',
+    color: '#0D0D0D',
     marginBottom: 10,
   },
 
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+
+  halfInputLeft: {
+    flex: 1,
+    marginRight: 8,
+  },
+
+  halfInputRight: {
+    flex: 1,
   },
 
   addressInfoBox: {
@@ -2908,41 +2782,32 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  landmarkWrapper: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-    marginTop: 6,
-    marginBottom: 4,
-  },
-
   addressSubtext: {
     fontSize: 12,
-    color: '#475569',
+    color: '#64748B',
     fontWeight: '500',
+    marginTop: 7,
   },
 
   addressCityText: {
     fontSize: 13,
     color: '#64748B',
-    marginTop: 4,
+    marginTop: 5,
     fontWeight: '500',
   },
 
   changeAddressBtn: {
     marginTop: 14,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
     borderRadius: 10,
-    paddingVertical: 8,
+    paddingVertical: 9,
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
   },
 
   changeAddressBtnText: {
-    color: '#475569',
+    color: '#334155',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -2960,7 +2825,7 @@ const styles = StyleSheet.create({
   },
 
   primaryButton: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#22CC71',
     paddingHorizontal: 24,
     paddingVertical: 10,
     borderRadius: 10,
@@ -2979,7 +2844,7 @@ const styles = StyleSheet.create({
   promptLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
+    color: '#64748B',
     marginTop: 6,
     marginBottom: 8,
   },
@@ -2991,27 +2856,69 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  saveDefaultChip: {
+    backgroundColor: '#22CC71',
+    marginRight: 8,
+  },
+
+  useOnceChip: {
+    backgroundColor: '#64748B',
+  },
+
   actionChipText: {
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
   },
 
-  summaryListBlock: {
-    marginTop: 2,
+  vendorGroupBlock: {
+    paddingVertical: 8,
+  },
+
+  vendorGroupSeparator: {
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    marginTop: 8,
+    paddingTop: 14,
+  },
+
+  vendorHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+
+  vendorStoreTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0D0D0D',
+  },
+
+  vendorDistanceText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#22CC71',
+    marginLeft: 10,
   },
 
   summaryItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    paddingVertical: 7,
+  },
+
+  summaryItemContent: {
+    flex: 1,
+    paddingRight: 12,
   },
 
   itemName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#1E293B',
+    color: '#334155',
   },
 
   itemQuantity: {
@@ -3021,13 +2928,37 @@ const styles = StyleSheet.create({
   },
 
   itemPrice: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#0F172A',
+    color: '#0D0D0D',
+  },
+
+  vendorSubtotalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 9,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#F8FAFC',
+  },
+
+  vendorSubtotalLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+
+  vendorSubtotalValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0D0D0D',
   },
 
   breakdownRow: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 6,
   },
 
@@ -3054,136 +2985,75 @@ const styles = StyleSheet.create({
   },
 
   grandTotalRow: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingTop: 12,
   },
 
   grandTotalLabel: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#0D0D0D',
   },
 
   grandTotalValue: {
     fontSize: 18,
     fontWeight: '900',
-    color: '#10B981',
-  },
-
-  noticeCardContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1,
-    borderColor: '#FCD34D',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 14,
-    alignItems: 'flex-start',
-  },
-
-  noticeCardIcon: {
-    fontSize: 18,
-    marginRight: 10,
-    marginTop: 2,
-  },
-
-  noticeCardTextWrapper: {
-    flex: 1,
-  },
-
-  noticeCardTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#92400E',
-    marginBottom: 3,
-  },
-
-  noticeCardBody: {
-    fontSize: 12,
-    color: '#B45309',
-    lineHeight: 17,
-    fontWeight: '500',
+    color: '#22CC71',
   },
 
   paymentOptionSelected: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 2,
-    borderColor: '#10B981',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8FBF0',
+    borderWidth: 1.5,
+    borderColor: '#22CC71',
     borderRadius: 14,
     padding: 16,
-  },
-
-  paymentOptionUnselected: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 14,
-    padding: 16,
-  },
-
-  paymentOptionDisabled: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 14,
-    padding: 16,
-    opacity: 0.65,
   },
 
   radioFilled: {
     width: 18,
     height: 18,
     borderRadius: 9,
-    borderWidth: 6,
-    borderColor: '#10B981',
+    borderWidth: 5,
+    borderColor: '#22CC71',
     marginRight: 12,
     backgroundColor: '#FFFFFF',
   },
 
-  radioDisabled: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#E2E8F0',
-    marginRight: 12,
+  paymentTextWrapper: {
+    flex: 1,
   },
 
   paymentMethodNameText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#1E293B',
+    color: '#0D0D0D',
   },
 
-  paymentMethodDisabledText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#94A3B8',
+  paymentMethodSubtitleText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 3,
+    fontWeight: '500',
   },
 
-  comingSoonBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+  noticeCardContainer: {
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 12,
   },
 
-  comingSoonBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
+  noticeCardBody: {
+    fontSize: 12,
     color: '#64748B',
-  },
-
-  radioEmpty: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: '#CBD5E1',
-    marginRight: 12,
+    lineHeight: 18,
+    fontWeight: '500',
   },
 
   stickyFooterPanel: {
@@ -3194,9 +3064,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
-    paddingTop: 16,
+    paddingTop: 14,
     paddingBottom: 36,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -3223,20 +3093,20 @@ const styles = StyleSheet.create({
   },
 
   stickyTotalAmountText: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '900',
-    color: '#0F172A',
+    color: '#0D0D0D',
   },
 
   stickyOrderPlacementButton: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 28,
-    paddingVertical: 16,
+    backgroundColor: '#22CC71',
+    paddingHorizontal: 22,
+    paddingVertical: 15,
     borderRadius: 14,
-    minWidth: 160,
+    minWidth: 150,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#10B981',
+    shadowColor: '#22CC71',
     shadowOffset: {
       width: 0,
       height: 4,
@@ -3250,7 +3120,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 
   disabledButton: {
@@ -3295,54 +3165,46 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
 
+  successScroll: {
+    width: '100%',
+  },
+
+  successScrollContent: {
+    alignItems: 'center',
+    paddingBottom: 6,
+  },
+
   successScreenBadgeCircle: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#10B981',
+    backgroundColor: '#22CC71',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
-    marginTop: 10,
-  },
-
-  successBadgeText: {
-    fontSize: 28,
-    color: '#FFFFFF',
-    fontWeight: '700',
+    marginBottom: 14,
+    marginTop: 6,
   },
 
   successTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#0D0D0D',
     textAlign: 'center',
   },
 
   successSubtitle: {
     fontSize: 14,
-    color: '#475569',
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 4,
+    fontWeight: '600',
+  },
+
+  successOrderCountText: {
+    fontSize: 12,
+    color: '#94A3B8',
     textAlign: 'center',
     marginTop: 6,
-    fontWeight: '600',
-  },
-
-  verificationBanner: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#F59E0B',
-    borderRadius: 12,
-    padding: 12,
-    width: '100%',
-    marginTop: 14,
-  },
-
-  verificationBannerText: {
-    fontSize: 12,
-    color: '#92400E',
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 16,
   },
 
   successMetaCard: {
@@ -3351,12 +3213,37 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 16,
     width: '100%',
-    padding: 16,
-    marginTop: 20,
-    marginBottom: 16,
+    padding: 14,
+    marginTop: 14,
+  },
+
+  successVendorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  successVendorStoreHeader: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0D0D0D',
+    paddingRight: 8,
+  },
+
+  successVendorOrderNumberBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#22CC71',
+    backgroundColor: '#E8FBF0',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
 
   metaItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 4,
   },
@@ -3371,12 +3258,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#334155',
     fontWeight: '600',
+    textAlign: 'right',
   },
 
   metaCardValueHighlight: {
-    fontSize: 13,
-    color: '#10B981',
-    fontWeight: '700',
+    fontSize: 14,
+    color: '#22CC71',
+    fontWeight: '800',
   },
 
   metaItemSeparator: {
@@ -3385,20 +3273,25 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
 
-  trackOrderButton: {
-    backgroundColor: '#10B981',
+  trackOrderInlineButton: {
+    backgroundColor: '#22CC71',
     width: '100%',
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: 'center',
-    marginBottom: 10,
     marginTop: 10,
   },
 
-  trackOrderButtonText: {
+  trackOrderInlineButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
+  },
+
+  successOrderDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginTop: 14,
   },
 
   returnShoppingButton: {
@@ -3409,235 +3302,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 15,
+    marginTop: 14,
   },
 
   returnShoppingButtonText: {
-    color: '#475569',
+    color: '#64748B',
     fontSize: 13,
     fontWeight: '600',
-  },
-
-  appIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-
-  appIconInitial: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-
-  modernAppsContainer: {
-    marginTop: 14,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-
-  modernAppCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-
-  modernAppCardSelected: {
-    borderColor: '#10B981',
-    borderWidth: 2,
-    backgroundColor: '#F0FDF4',
-  },
-
-  appTextDetails: {
-    flex: 1,
-  },
-
-  appNameTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-
-  appSubtitleText: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-
-  otpCardWrapper: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 16,
-    width: '100%',
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.02,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-
-  otpSectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-
-  otpSectionSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-    textAlign: 'center',
-    lineHeight: 16,
-    marginBottom: 14,
-  },
-
-  otpValuePillBox: {
-    backgroundColor: '#E6F4EA',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    alignSelf: 'center',
-    minWidth: 180,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-
-  otpLargeDigitsText: {
-    fontSize: 38,
-    fontWeight: '900',
-    color: '#137333',
-    letterSpacing: 4,
-    textAlign: 'center',
-  },
-
-  copyOtpInlineTextBtn: {
-    alignSelf: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginBottom: 6,
-  },
-
-  copyOtpInlineTextBtnLabel: {
-    color: '#10B981',
-    fontSize: 13,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-
-  otpSafetyNoticeDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 10,
-  },
-
-  otpSafetyNoticeHeading: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#DC2626',
-    marginBottom: 2,
-  },
-
-  otpSafetyNoticeDescription: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '500',
-    lineHeight: 15,
-  },
-
-  missingAppOverlay: {
-    flex: 1,
-    backgroundColor:
-      'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-
-  missingAppCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    width: '100%',
-    maxWidth: 340,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-
-  missingAppTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 22,
-  },
-
-  missingAppButtonRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-
-  missingAppCancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-  },
-
-  missingAppCancelText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-
-  missingAppChooseBtn: {
-    flex: 1.4,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#10B981',
-    alignItems: 'center',
-  },
-
-  missingAppChooseText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
   },
 });
