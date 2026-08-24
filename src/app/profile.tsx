@@ -60,27 +60,50 @@ export default function ProfileScreen() {
   }, []);
 
   const handleHelpSupport = async () => {
-  const helpUrl = 'https://rivo-website.pages.dev/contact';
+    const helpUrl = 'https://rivo-website.pages.dev/contact';
 
-  try {
-    const supported = await Linking.canOpenURL(helpUrl);
+    try {
+      const supported = await Linking.canOpenURL(helpUrl);
 
-    if (supported) {
-      await Linking.openURL(helpUrl);
-    } else {
+      if (supported) {
+        await Linking.openURL(helpUrl);
+      } else {
+        Alert.alert(
+          'Unable to Open Help',
+          'Please visit the Rivo support page from your browser.'
+        );
+      }
+    } catch (error) {
+      console.error('Failed to open Rivo Help & Support:', error);
       Alert.alert(
         'Unable to Open Help',
-        'Please visit the Rivo support page from your browser.'
+        'Please try again later.'
       );
     }
-  } catch (error) {
-    console.error('Failed to open Rivo Help & Support:', error);
-    Alert.alert(
-      'Unable to Open Help',
-      'Please try again later.'
-    );
-  }
-};
+  };
+
+  const handleDeleteAccount = async () => {
+    const deleteAccountUrl = 'https://rivocity.com/delete-account';
+
+    try {
+      const supported = await Linking.canOpenURL(deleteAccountUrl);
+
+      if (supported) {
+        await Linking.openURL(deleteAccountUrl);
+      } else {
+        Alert.alert(
+          'Unable to Open',
+          'Please visit the Rivo account deletion page from your browser.'
+        );
+      }
+    } catch (error) {
+      console.error('Failed to open account deletion page:', error);
+      Alert.alert(
+        'Unable to Open',
+        'Please try again later.'
+      );
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -105,6 +128,7 @@ export default function ProfileScreen() {
 
   const getInitials = (name: string) => {
     if (!name || name === 'N/A') return 'U';
+
     return name
       .split(' ')
       .map((part) => part[0])
@@ -131,46 +155,74 @@ export default function ProfileScreen() {
         <View style={styles.navRow}>
           <Pressable
             onPress={() => router.back()}
-            style={({ pressed }) => [styles.backButton, pressed && styles.pressOpacity]}
+            style={({ pressed }) => [
+              styles.backButton,
+              pressed && styles.pressOpacity,
+            ]}
             hitSlop={8}
           >
             <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </Pressable>
+
           <Text style={styles.headerTitle}>Profile</Text>
+
           <View style={{ width: 40 }} />
         </View>
 
         {userData && (
           <View style={styles.avatarWrapper}>
             <View style={styles.avatarInner}>
-              <Text style={styles.avatarText}>{getInitials(userData.name)}</Text>
+              <Text style={styles.avatarText}>
+                {getInitials(userData.name)}
+              </Text>
             </View>
+
             <View style={styles.userMetaTextContainer}>
               <Text style={styles.userMetaName} numberOfLines={1}>
                 {userData.name}
               </Text>
+
               <View style={styles.badgeRow}>
-                <Ionicons name="checkmark-circle" size={14} color="#22CC71" />
-                <Text style={styles.userMetaSub}>Verified Customer</Text>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={14}
+                  color="#22CC71"
+                />
+                <Text style={styles.userMetaSub}>
+                  Verified Customer
+                </Text>
               </View>
             </View>
           </View>
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {userData ? (
           <View style={styles.mainContainer}>
             {/* PERSONAL INFORMATION */}
-            <Text style={styles.sectionTitle}>Personal Information</Text>
+            <Text style={styles.sectionTitle}>
+              Personal Information
+            </Text>
+
             <View style={styles.premiumCard}>
               <View style={styles.infoRow}>
                 <View style={styles.infoIconWrapper}>
-                  <Ionicons name="person-outline" size={18} color="#0D0D0D" />
+                  <Ionicons
+                    name="person-outline"
+                    size={18}
+                    color="#0D0D0D"
+                  />
                 </View>
+
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>Name</Text>
-                  <Text style={styles.infoValue}>{userData.name}</Text>
+                  <Text style={styles.infoValue}>
+                    {userData.name}
+                  </Text>
                 </View>
               </View>
 
@@ -178,11 +230,18 @@ export default function ProfileScreen() {
 
               <View style={styles.infoRow}>
                 <View style={styles.infoIconWrapper}>
-                  <Ionicons name="mail-outline" size={18} color="#0D0D0D" />
+                  <Ionicons
+                    name="mail-outline"
+                    size={18}
+                    color="#0D0D0D"
+                  />
                 </View>
+
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>Email</Text>
-                  <Text style={styles.infoValue}>{userData.email}</Text>
+                  <Text style={styles.infoValue}>
+                    {userData.email}
+                  </Text>
                 </View>
               </View>
 
@@ -190,181 +249,392 @@ export default function ProfileScreen() {
 
               <View style={styles.infoRow}>
                 <View style={styles.infoIconWrapper}>
-                  <Ionicons name="call-outline" size={18} color="#0D0D0D" />
+                  <Ionicons
+                    name="call-outline"
+                    size={18}
+                    color="#0D0D0D"
+                  />
                 </View>
+
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>Phone</Text>
-                  <Text style={styles.infoValue}>{userData.phone}</Text>
+                  <Text style={styles.infoValue}>
+                    {userData.phone}
+                  </Text>
                 </View>
               </View>
             </View>
 
             {/* ACCOUNT */}
             <Text style={styles.sectionTitle}>Account</Text>
+
             <View style={styles.premiumCard}>
               <Pressable
                 onPress={() => router.push('/orders')}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="receipt-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="receipt-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>My Orders</Text>
+
+                  <Text style={styles.menuItemText}>
+                    My Orders
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
 
               <View style={styles.cardSeparator} />
 
               <Pressable
                 onPress={() => router.push('/addresses')}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="location-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="location-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>My Addresses</Text>
+
+                  <Text style={styles.menuItemText}>
+                    My Addresses
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
 
               <View style={styles.cardSeparator} />
 
               <Pressable
                 onPress={() => {}}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="notifications-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="notifications-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>Notifications</Text>
+
+                  <Text style={styles.menuItemText}>
+                    Notifications
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
 
               <View style={styles.cardSeparator} />
 
               <Pressable
-                onPress={() => handleHelpSupport()}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                onPress={handleHelpSupport}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="help-buoy-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="help-buoy-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>Help & Support</Text>
+
+                  <Text style={styles.menuItemText}>
+                    Help & Support
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
+              </Pressable>
+
+              <View style={styles.cardSeparator} />
+
+              <Pressable
+                onPress={handleDeleteAccount}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
+              >
+                <View style={styles.menuLeftBlock}>
+                  <View style={styles.menuIconWrapper}>
+                    <Ionicons
+                      name="trash-outline"
+                      size={18}
+                      color="#EF4444"
+                    />
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.menuItemText,
+                      styles.deleteAccountText,
+                    ]}
+                  >
+                    Delete Account
+                  </Text>
+                </View>
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
             </View>
 
             {/* HELP & LEGAL */}
-            <Text style={styles.sectionTitle}>Help & Legal</Text>
+            <Text style={styles.sectionTitle}>
+              Help & Legal
+            </Text>
+
             <View style={styles.premiumCard}>
               <Pressable
                 onPress={() => router.push('/legal/terms' as any)}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="document-text-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="document-text-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>Terms & Conditions</Text>
+
+                  <Text style={styles.menuItemText}>
+                    Terms & Conditions
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
 
               <View style={styles.cardSeparator} />
 
               <Pressable
                 onPress={() => router.push('/legal/privacy' as any)}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="shield-checkmark-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="shield-checkmark-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>Privacy Policy</Text>
+
+                  <Text style={styles.menuItemText}>
+                    Privacy Policy
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
 
               <View style={styles.cardSeparator} />
 
               <Pressable
                 onPress={() => router.push('/legal/liability' as any)}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="alert-circle-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="alert-circle-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>Limitation of Liability</Text>
+
+                  <Text style={styles.menuItemText}>
+                    Limitation of Liability
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
 
               <View style={styles.cardSeparator} />
 
               <Pressable
                 onPress={() => router.push('/legal/disclaimer' as any)}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="information-circle-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="information-circle-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>Disclaimer</Text>
+
+                  <Text style={styles.menuItemText}>
+                    Disclaimer
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
 
               <View style={styles.cardSeparator} />
 
               <Pressable
                 onPress={() => router.push('/legal/refund-policy' as any)}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="refresh-circle-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="refresh-circle-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>Refund & Cancellation Policy</Text>
+
+                  <Text style={styles.menuItemText}>
+                    Refund & Cancellation Policy
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
 
               <View style={styles.cardSeparator} />
 
               <Pressable
                 onPress={() => router.push('/legal/contact' as any)}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="mail-open-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="mail-open-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>Contact Us</Text>
+
+                  <Text style={styles.menuItemText}>
+                    Contact Us
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
 
               <View style={styles.cardSeparator} />
 
               <Pressable
                 onPress={() => router.push('/about' as any)}
-                style={({ pressed }) => [styles.menuRowItem, pressed && styles.pressOpacity]}
+                style={({ pressed }) => [
+                  styles.menuRowItem,
+                  pressed && styles.pressOpacity,
+                ]}
               >
                 <View style={styles.menuLeftBlock}>
                   <View style={styles.menuIconWrapper}>
-                    <Ionicons name="ribbon-outline" size={18} color="#0D0D0D" />
+                    <Ionicons
+                      name="ribbon-outline"
+                      size={18}
+                      color="#0D0D0D"
+                    />
                   </View>
-                  <Text style={styles.menuItemText}>About Rivo</Text>
+
+                  <Text style={styles.menuItemText}>
+                    About Rivo
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color="#94A3B8"
+                />
               </Pressable>
             </View>
 
@@ -372,22 +642,40 @@ export default function ProfileScreen() {
             <View style={styles.logoutContainer}>
               <Pressable
                 onPress={handleLogout}
-                style={({ pressed }) => [styles.logoutButton, pressed && styles.btnPressScale]}
+                style={({ pressed }) => [
+                  styles.logoutButton,
+                  pressed && styles.btnPressScale,
+                ]}
               >
-                <Ionicons name="log-out-outline" size={18} color="#EF4444" style={{ marginRight: 8 }} />
-                <Text style={styles.logoutButtonText}>Log Out</Text>
+                <Ionicons
+                  name="log-out-outline"
+                  size={18}
+                  color="#EF4444"
+                  style={{ marginRight: 8 }}
+                />
+
+                <Text style={styles.logoutButtonText}>
+                  Log Out
+                </Text>
               </Pressable>
             </View>
 
             {/* FOOTER METADATA */}
             <View style={styles.footerContainer}>
-              <Text style={styles.versionText}>Version 1.0.0</Text>
-              <Text style={styles.madeWithLoveText}>Made with ❤️ in India</Text>
+              <Text style={styles.versionText}>
+                Version 1.0.0
+              </Text>
+
+              <Text style={styles.madeWithLoveText}>
+                Made with ❤️ in India
+              </Text>
             </View>
           </View>
         ) : (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorTextText}>No customer profile found.</Text>
+            <Text style={styles.errorTextText}>
+              No customer profile found.
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -582,6 +870,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#0D0D0D',
+  },
+  deleteAccountText: {
+    color: '#EF4444',
   },
   logoutContainer: {
     marginTop: 36,
