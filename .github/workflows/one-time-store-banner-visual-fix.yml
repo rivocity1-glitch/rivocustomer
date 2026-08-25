@@ -1,0 +1,62 @@
+name: One-time store banner visual fix
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix-store-banner:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch store banner rendering
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('src/app/store/[id].tsx')
+          source = path.read_text(encoding='utf-8')
+
+          updated = source.replace(
+              'const BANNER_HEIGHT = 240;',
+              'const BANNER_HEIGHT = Math.round(SCREEN_WIDTH * 3 / 8);',
+              1,
+          )
+
+          start = updated.index('const BannerSlideItem')
+          end = updated.index('// --- BANNER CAROUSEL ---', start)
+          banner_block = updated[start:end]
+          banner_block = banner_block.replace(
+              'resizeMode="cover"',
+              'resizeMode="contain"',
+              1,
+          )
+          banner_block = re.sub(
+              r'\n\s*<LinearGradient\s*\n\s*colors=\{\[\s*\'rgba\(0,0,0,0\.55\)\',\s*\'transparent\',\s*\'rgba\(0,0,0,0\.45\)\',\s*\]\}\s*\n\s*locations=\{\[0, 0\.45, 1\]\}\s*\n\s*style=\{styles\.bannerGradientOverlay\}\s*\n\s*/>',
+              '',
+              banner_block,
+              count=1,
+          )
+          updated = updated[:start] + banner_block + updated[end:]
+
+          if updated == source:
+              raise SystemExit('No changes were made; expected store banner code was not found.')
+
+          path.write_text(updated, encoding='utf-8')
+
+      - name: Commit visual fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "src/app/store/[id].tsx"
+          git diff --cached --quiet && exit 0
+          git commit -m "Fix store banner visuals [skip ci]"
+          git push
