@@ -1,7 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Animated,
   Dimensions,
@@ -17,7 +23,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { addToCart, getCart, subscribeCart } from '../../lib/cart';
+import {
+  addToCart,
+  getCart,
+  subscribeCart,
+} from '../../lib/cart';
 import { supabase } from '../../lib/supabase';
 
 // --- TYPES ---
@@ -66,8 +76,25 @@ interface CategoryRow {
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 const CARD_WIDTH = (SCREEN_WIDTH - 40) / 2;
-const BANNER_HEIGHT = 240;
+
+/*
+ * VENDOR BANNER STANDARD
+ *
+ * Recommended vendor banner size:
+ * 1600 × 600 px
+ *
+ * Aspect ratio:
+ * 1600 / 600 = 2.6667
+ * 8 / 3 = 2.6667
+ *
+ * Keeping the container at this ratio prevents the
+ * customer's banner artwork from being cropped.
+ */
+const BANNER_ASPECT_RATIO = 8 / 3;
+const BANNER_HEIGHT =
+  SCREEN_WIDTH / BANNER_ASPECT_RATIO;
 
 // --- HAVERSINE DISTANCE HELPER ---
 function calculateDistance(
@@ -77,17 +104,27 @@ function calculateDistance(
   lon2: number
 ): number {
   const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
+  const dLat =
+    ((lat2 - lat1) * Math.PI) / 180;
+
+  const dLon =
+    ((lon2 - lon1) * Math.PI) / 180;
 
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLat / 2) *
+      Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
 
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const c =
+    2 *
+    Math.atan2(
+      Math.sqrt(a),
+      Math.sqrt(1 - a)
+    );
 
   return R * c;
 }
@@ -108,30 +145,50 @@ function parseTimeString(
   };
 }
 
-function format12Hour(timeStr?: string): string {
+function format12Hour(
+  timeStr?: string
+): string {
   const parsed = parseTimeString(timeStr);
 
   if (!parsed) return '';
 
-  const period = parsed.hours >= 12 ? 'PM' : 'AM';
-  const hours12 = parsed.hours % 12 || 12;
+  const period =
+    parsed.hours >= 12 ? 'PM' : 'AM';
+
+  const hours12 =
+    parsed.hours % 12 || 12;
+
   const minsStr =
-    parsed.minutes < 10 ? `0${parsed.minutes}` : `${parsed.minutes}`;
+    parsed.minutes < 10
+      ? `0${parsed.minutes}`
+      : `${parsed.minutes}`;
 
   return `${hours12}:${minsStr} ${period}`;
 }
 
-function getBusinessHoursDisplay(profile: VendorProfile | null) {
-  const rawHours = profile?.business_hours;
-  const rawStatus = (profile?.store_status || 'closed').toLowerCase();
-  const manualOverride = !!profile?.manual_override;
+function getBusinessHoursDisplay(
+  profile: VendorProfile | null
+) {
+  const rawHours =
+    profile?.business_hours;
 
-  let parsedHours: BusinessHoursJSON | null = null;
+  const rawStatus = (
+    profile?.store_status || 'closed'
+  ).toLowerCase();
+
+  const manualOverride =
+    !!profile?.manual_override;
+
+  let parsedHours:
+    | BusinessHoursJSON
+    | null = null;
 
   if (rawHours) {
     try {
       parsedHours =
-        typeof rawHours === 'string' ? JSON.parse(rawHours) : rawHours;
+        typeof rawHours === 'string'
+          ? JSON.parse(rawHours)
+          : rawHours;
     } catch {
       parsedHours = null;
     }
@@ -148,30 +205,45 @@ function getBusinessHoursDisplay(profile: VendorProfile | null) {
   ];
 
   const now = new Date();
-  const currentDayName = days[now.getDay()];
+
+  const currentDayName =
+    days[now.getDay()];
+
   const todaySchedule = parsedHours
     ? parsedHours[currentDayName]
     : null;
 
-  let timeLabel = 'Hours unavailable';
+  let timeLabel =
+    'Hours unavailable';
+
   let isClosingSoon = false;
 
   if (todaySchedule) {
     if (todaySchedule.closed) {
       timeLabel = 'Closed All Day';
-    } else if (todaySchedule.open && todaySchedule.close) {
-      timeLabel = `${format12Hour(todaySchedule.open)} - ${format12Hour(
+    } else if (
+      todaySchedule.open &&
+      todaySchedule.close
+    ) {
+      timeLabel = `${format12Hour(
+        todaySchedule.open
+      )} - ${format12Hour(
         todaySchedule.close
       )}`;
 
-      const closeTime = parseTimeString(todaySchedule.close);
+      const closeTime =
+        parseTimeString(
+          todaySchedule.close
+        );
 
       if (closeTime) {
         const currentMins =
-          now.getHours() * 60 + now.getMinutes();
+          now.getHours() * 60 +
+          now.getMinutes();
 
         const closeMins =
-          closeTime.hours * 60 + closeTime.minutes;
+          closeTime.hours * 60 +
+          closeTime.minutes;
 
         if (
           closeMins - currentMins > 0 &&
@@ -183,7 +255,10 @@ function getBusinessHoursDisplay(profile: VendorProfile | null) {
     }
   }
 
-  if (manualOverride && rawStatus === 'closed') {
+  if (
+    manualOverride &&
+    rawStatus === 'closed'
+  ) {
     return {
       statusType: 'closed' as const,
       statusBadge: 'Closed',
@@ -215,7 +290,8 @@ function getBusinessHoursDisplay(profile: VendorProfile | null) {
 
   if (isClosingSoon) {
     return {
-      statusType: 'closing_soon' as const,
+      statusType:
+        'closing_soon' as const,
       statusBadge: 'Closing Soon',
       timeLabel,
       color: '#F97316',
@@ -233,16 +309,26 @@ function getBusinessHoursDisplay(profile: VendorProfile | null) {
 }
 
 // --- SHIMMER LOADER COMPONENT ---
-function ShimmerView({ style }: { style: any }) {
-  const shimmerAnim = useRef(new Animated.Value(0)).current;
+function ShimmerView({
+  style,
+}: {
+  style: any;
+}) {
+  const shimmerAnim =
+    useRef(
+      new Animated.Value(0)
+    ).current;
 
   useEffect(() => {
     const loop = Animated.loop(
-      Animated.timing(shimmerAnim, {
-        toValue: 1,
-        duration: 1200,
-        useNativeDriver: true,
-      })
+      Animated.timing(
+        shimmerAnim,
+        {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: true,
+        }
+      )
     );
 
     loop.start();
@@ -250,10 +336,11 @@ function ShimmerView({ style }: { style: any }) {
     return () => loop.stop();
   }, [shimmerAnim]);
 
-  const opacity = shimmerAnim.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0.3, 0.7, 0.3],
-  });
+  const opacity =
+    shimmerAnim.interpolate({
+      inputRange: [0, 0.5, 1],
+      outputRange: [0.3, 0.7, 0.3],
+    });
 
   return (
     <Animated.View
@@ -261,7 +348,8 @@ function ShimmerView({ style }: { style: any }) {
         style,
         {
           opacity,
-          backgroundColor: '#E2E8F0',
+          backgroundColor:
+            '#E2E8F0',
         },
       ]}
     />
@@ -271,66 +359,97 @@ function ShimmerView({ style }: { style: any }) {
 function StoreSkeleton() {
   return (
     <View style={styles.container}>
-      <ShimmerView style={styles.skeletonBanner} />
+      <ShimmerView
+        style={styles.skeletonBanner}
+      />
 
       <View style={styles.profileCard}>
         <View
           style={{
             flexDirection: 'row',
-            justifyContent: 'space-between',
+            justifyContent:
+              'space-between',
           }}
         >
-          <ShimmerView style={styles.skeletonAvatar} />
-          <ShimmerView style={styles.skeletonBadge} />
+          <ShimmerView
+            style={styles.skeletonAvatar}
+          />
+
+          <ShimmerView
+            style={styles.skeletonBadge}
+          />
         </View>
 
-        <ShimmerView style={styles.skeletonTitle} />
-        <ShimmerView style={styles.skeletonSubTitle} />
-        <ShimmerView style={styles.skeletonMetrics} />
+        <ShimmerView
+          style={styles.skeletonTitle}
+        />
+
+        <ShimmerView
+          style={styles.skeletonSubTitle}
+        />
+
+        <ShimmerView
+          style={styles.skeletonMetrics}
+        />
       </View>
 
-      <View style={styles.skeletonGrid}>
-        {[1, 2, 3, 4].map((key) => (
-          <ShimmerView
-            key={key}
-            style={styles.skeletonCard}
-          />
-        ))}
+      <View
+        style={styles.skeletonGrid}
+      >
+        {[1, 2, 3, 4].map(
+          (key) => (
+            <ShimmerView
+              key={key}
+              style={styles.skeletonCard}
+            />
+          )
+        )}
       </View>
     </View>
   );
 }
 
 // --- BANNER ITEM MEMOIZED ---
-const BannerSlideItem = React.memo(
-  ({ item }: { item: string }) => {
-    useEffect(() => {
-      if (item) {
-        Image.prefetch(item);
-      }
-    }, [item]);
+const BannerSlideItem =
+  React.memo(
+    ({ item }: { item: string }) => {
+      useEffect(() => {
+        if (item) {
+          Image.prefetch(item);
+        }
+      }, [item]);
 
-    return (
-      <View style={styles.bannerItemContainer}>
-        <Image
-          source={{ uri: item }}
-          style={styles.bannerImage}
-          resizeMode="cover"
-        />
-
-        <LinearGradient
-          colors={[
-            'rgba(0,0,0,0.55)',
-            'transparent',
-            'rgba(0,0,0,0.45)',
-          ]}
-          locations={[0, 0.45, 1]}
-          style={styles.bannerGradientOverlay}
-        />
-      </View>
-    );
-  }
-);
+      return (
+        <View
+          style={
+            styles.bannerItemContainer
+          }
+        >
+          {item ? (
+            <Image
+              source={{
+                uri: item,
+              }}
+              style={
+                styles.bannerImage
+              }
+              /*
+               * IMPORTANT:
+               * Do NOT use "cover" here.
+               *
+               * Vendor artwork is 1600 × 600.
+               * The container is also 8:3.
+               *
+               * "contain" guarantees that the
+               * complete artwork remains visible.
+               */
+              resizeMode="contain"
+            />
+          ) : null}
+        </View>
+      );
+    }
+  );
 
 // --- BANNER CAROUSEL ---
 interface BannerCarouselProps {
@@ -342,425 +461,521 @@ interface BannerCarouselProps {
   onShare: () => void;
 }
 
-const BannerCarousel = React.memo(
-  ({
-    banners,
-    shopName,
-    avatarUrl,
-    isFavorite,
-    onToggleFavorite,
-    onShare,
-  }: BannerCarouselProps) => {
-    const totalBanners = banners.length;
+const BannerCarousel =
+  React.memo(
+    ({
+      banners,
+      shopName,
+      avatarUrl,
+      isFavorite,
+      onToggleFavorite,
+      onShare,
+    }: BannerCarouselProps) => {
+      const totalBanners =
+        banners.length;
 
-    const flatListRef = useRef<FlatList>(null);
+      const flatListRef =
+        useRef<FlatList>(null);
 
-    const [activeIndex, setActiveIndex] = useState(0);
+      const [
+        activeIndex,
+        setActiveIndex,
+      ] = useState(0);
 
-    const activeIndexRef = useRef(0);
+      const activeIndexRef =
+        useRef(0);
 
-    const timerRef =
-      useRef<ReturnType<typeof setTimeout> | null>(null);
+      const timerRef =
+        useRef<
+          ReturnType<
+            typeof setTimeout
+          > | null
+        >(null);
 
-    const isUserDragging = useRef(false);
+      const isUserDragging =
+        useRef(false);
 
-    // Infinite-loop list:
-    //
-    // Normal:
-    // [1, 2, 3]
-    //
-    // Loop:
-    // [3, 1, 2, 3, 1]
-    //
-    // We start at index 1.
-    const loopedBanners = useMemo(() => {
-      if (totalBanners <= 1) {
-        return banners;
-      }
+      const loopedBanners =
+        useMemo(() => {
+          if (totalBanners <= 1) {
+            return banners;
+          }
 
-      return [
-        banners[totalBanners - 1],
-        ...banners,
-        banners[0],
-      ];
-    }, [banners, totalBanners]);
+          return [
+            banners[
+              totalBanners - 1
+            ],
+            ...banners,
+            banners[0],
+          ];
+        }, [
+          banners,
+          totalBanners,
+        ]);
 
-    useEffect(() => {
-      activeIndexRef.current = activeIndex;
-    }, [activeIndex]);
+      useEffect(() => {
+        activeIndexRef.current =
+          activeIndex;
+      }, [activeIndex]);
 
-    // Clear autoplay timer
-    const clearAutoplayTimer = useCallback(() => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    }, []);
+      const clearAutoplayTimer =
+        useCallback(() => {
+          if (timerRef.current) {
+            clearTimeout(
+              timerRef.current
+            );
 
-    // Scroll to a logical banner index.
-    //
-    // Logical:
-    // 0 = first banner
-    // 1 = second banner
-    // 2 = third banner
-    //
-    // Physical:
-    // 1 = first banner
-    // 2 = second banner
-    // 3 = third banner
-    const scrollToLogicalIndex = useCallback(
-      (index: number, animated = true) => {
-        if (totalBanners <= 1) return;
+            timerRef.current = null;
+          }
+        }, []);
 
-        const normalizedIndex =
-          ((index % totalBanners) + totalBanners) %
-          totalBanners;
+      const scrollToLogicalIndex =
+        useCallback(
+          (
+            index: number,
+            animated = true
+          ) => {
+            if (
+              totalBanners <= 1
+            ) {
+              return;
+            }
 
-        requestAnimationFrame(() => {
-          flatListRef.current?.scrollToIndex({
-            index: normalizedIndex + 1,
-            animated,
-          });
-        });
-      },
-      [totalBanners]
-    );
+            const normalizedIndex =
+              ((index %
+                totalBanners) +
+                totalBanners) %
+              totalBanners;
 
-    // Schedule next automatic slide.
-    const scheduleNextSlide = useCallback(() => {
-      clearAutoplayTimer();
+            requestAnimationFrame(
+              () => {
+                flatListRef.current?.scrollToIndex(
+                  {
+                    index:
+                      normalizedIndex +
+                      1,
+                    animated,
+                  }
+                );
+              }
+            );
+          },
+          [totalBanners]
+        );
 
-      if (
-        totalBanners <= 1 ||
-        isUserDragging.current
-      ) {
-        return;
-      }
+      const scheduleNextSlide =
+        useCallback(() => {
+          clearAutoplayTimer();
 
-      timerRef.current = setTimeout(() => {
-        if (
-          isUserDragging.current ||
-          totalBanners <= 1
-        ) {
-          return;
+          if (
+            totalBanners <= 1 ||
+            isUserDragging.current
+          ) {
+            return;
+          }
+
+          timerRef.current =
+            setTimeout(() => {
+              if (
+                isUserDragging.current ||
+                totalBanners <= 1
+              ) {
+                return;
+              }
+
+              const nextIndex =
+                (activeIndexRef.current +
+                  1) %
+                totalBanners;
+
+              scrollToLogicalIndex(
+                nextIndex,
+                true
+              );
+            }, 4000);
+        }, [
+          totalBanners,
+          clearAutoplayTimer,
+          scrollToLogicalIndex,
+        ]);
+
+      useEffect(() => {
+        clearAutoplayTimer();
+
+        activeIndexRef.current = 0;
+        setActiveIndex(0);
+
+        if (totalBanners > 1) {
+          requestAnimationFrame(
+            () => {
+              flatListRef.current?.scrollToIndex(
+                {
+                  index: 1,
+                  animated: false,
+                }
+              );
+            }
+          );
         }
 
-        const nextIndex =
-          (activeIndexRef.current + 1) %
-          totalBanners;
-
-        scrollToLogicalIndex(nextIndex, true);
-      }, 4000);
-    }, [
-      totalBanners,
-      clearAutoplayTimer,
-      scrollToLogicalIndex,
-    ]);
-
-    // Reset carousel when banner data changes.
-    useEffect(() => {
-      clearAutoplayTimer();
-
-      activeIndexRef.current = 0;
-      setActiveIndex(0);
-
-      if (totalBanners > 1) {
-        requestAnimationFrame(() => {
-          flatListRef.current?.scrollToIndex({
-            index: 1,
-            animated: false,
-          });
-        });
-      }
-
-      scheduleNextSlide();
-
-      return () => {
-        clearAutoplayTimer();
-      };
-    }, [
-      banners,
-      totalBanners,
-      clearAutoplayTimer,
-      scheduleNextSlide,
-    ]);
-
-    // User starts swiping.
-    const handleScrollBeginDrag = () => {
-      isUserDragging.current = true;
-      clearAutoplayTimer();
-    };
-
-    // User stops dragging.
-    const handleScrollEndDrag = () => {
-      isUserDragging.current = false;
-    };
-
-    // Called after the swipe animation completely finishes.
-    const handleMomentumScrollEnd = (
-      event: NativeSyntheticEvent<NativeScrollEvent>
-    ) => {
-      if (totalBanners <= 1) {
         scheduleNextSlide();
-        return;
-      }
 
-      const contentOffset =
-        event.nativeEvent.contentOffset.x;
+        return () => {
+          clearAutoplayTimer();
+        };
+      }, [
+        banners,
+        totalBanners,
+        clearAutoplayTimer,
+        scheduleNextSlide,
+      ]);
 
-      const rawIndex = Math.round(
-        contentOffset / SCREEN_WIDTH
-      );
+      const handleScrollBeginDrag =
+        () => {
+          isUserDragging.current =
+            true;
 
-      let logicalIndex = rawIndex - 1;
+          clearAutoplayTimer();
+        };
 
-      // User moved left from banner 1 to the fake
-      // final banner.
-      //
-      // Physical:
-      // [3, 1, 2, 3, 1]
-      //  ↑
-      // rawIndex 0
-      //
-      // Immediately jump to the real banner 3.
-      if (rawIndex === 0) {
-        logicalIndex = totalBanners - 1;
+      const handleScrollEndDrag =
+        () => {
+          isUserDragging.current =
+            false;
+        };
 
-        requestAnimationFrame(() => {
-          flatListRef.current?.scrollToIndex({
-            index: totalBanners,
-            animated: false,
-          });
-        });
-      }
+      const handleMomentumScrollEnd =
+        (
+          event: NativeSyntheticEvent<NativeScrollEvent>
+        ) => {
+          if (
+            totalBanners <= 1
+          ) {
+            scheduleNextSlide();
+            return;
+          }
 
-      // User moved right from the final banner to
-      // the fake first banner.
-      //
-      // Physical:
-      // [3, 1, 2, 3, 1]
-      //                ↑
-      // rawIndex 4
-      //
-      // Immediately jump to the real banner 1.
-      else if (
-        rawIndex === totalBanners + 1
-      ) {
-        logicalIndex = 0;
+          const contentOffset =
+            event.nativeEvent
+              .contentOffset.x;
 
-        requestAnimationFrame(() => {
-          flatListRef.current?.scrollToIndex({
-            index: 1,
-            animated: false,
-          });
-        });
-      }
+          const rawIndex =
+            Math.round(
+              contentOffset /
+                SCREEN_WIDTH
+            );
 
-      logicalIndex =
-        ((logicalIndex % totalBanners) +
-          totalBanners) %
-        totalBanners;
+          let logicalIndex =
+            rawIndex - 1;
 
-      activeIndexRef.current = logicalIndex;
-      setActiveIndex(logicalIndex);
+          if (rawIndex === 0) {
+            logicalIndex =
+              totalBanners - 1;
 
-      isUserDragging.current = false;
+            requestAnimationFrame(
+              () => {
+                flatListRef.current?.scrollToIndex(
+                  {
+                    index:
+                      totalBanners,
+                    animated: false,
+                  }
+                );
+              }
+            );
+          } else if (
+            rawIndex ===
+            totalBanners + 1
+          ) {
+            logicalIndex = 0;
 
-      scheduleNextSlide();
-    };
+            requestAnimationFrame(
+              () => {
+                flatListRef.current?.scrollToIndex(
+                  {
+                    index: 1,
+                    animated: false,
+                  }
+                );
+              }
+            );
+          }
 
-    // Fallback if FlatList cannot calculate an index.
-    const handleScrollToIndexFailed = (
-      info: { index: number }
-    ) => {
-      setTimeout(() => {
-        flatListRef.current?.scrollToOffset({
-          offset:
-            info.index * SCREEN_WIDTH,
-          animated: false,
-        });
-      }, 100);
-    };
+          logicalIndex =
+            ((logicalIndex %
+              totalBanners) +
+              totalBanners) %
+            totalBanners;
 
-    const getItemLayout = useCallback(
-      (_: any, index: number) => ({
-        length: SCREEN_WIDTH,
-        offset: SCREEN_WIDTH * index,
-        index,
-      }),
-      []
-    );
+          activeIndexRef.current =
+            logicalIndex;
 
-    const renderBannerItem = useCallback(
-      ({ item }: { item: string }) => (
-        <BannerSlideItem item={item} />
-      ),
-      []
-    );
+          setActiveIndex(
+            logicalIndex
+          );
 
-    return (
-      <View style={styles.carouselContainer}>
-        {totalBanners > 0 ? (
-          <FlatList
-            ref={flatListRef}
-            data={loopedBanners}
-            horizontal
-            pagingEnabled
-            snapToInterval={SCREEN_WIDTH}
-            snapToAlignment="center"
-            decelerationRate="fast"
-            showsHorizontalScrollIndicator={false}
-            nestedScrollEnabled
-            directionalLockEnabled
-            disableIntervalMomentum
-            initialScrollIndex={
-              totalBanners > 1 ? 1 : 0
-            }
-            keyExtractor={(_, index) =>
-              `banner-slide-${index}`
-            }
-            renderItem={renderBannerItem}
-            getItemLayout={getItemLayout}
-            scrollEventThrottle={16}
-            onScrollBeginDrag={
-              handleScrollBeginDrag
-            }
-            onScrollEndDrag={
-              handleScrollEndDrag
-            }
-            onMomentumScrollEnd={
-              handleMomentumScrollEnd
-            }
-            onScrollToIndexFailed={
-              handleScrollToIndexFailed
-            }
-          />
-        ) : (
-          <View
-            style={
-              styles.placeholderBannerContainer
-            }
-          >
-            <LinearGradient
-              colors={[
-                '#0F172A',
-                '#1E293B',
-                '#0F172A',
-              ]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
+          isUserDragging.current =
+            false;
+
+          scheduleNextSlide();
+        };
+
+      const handleScrollToIndexFailed =
+        (info: {
+          index: number;
+        }) => {
+          setTimeout(() => {
+            flatListRef.current?.scrollToOffset(
+              {
+                offset:
+                  info.index *
+                  SCREEN_WIDTH,
+                animated: false,
+              }
+            );
+          }, 100);
+        };
+
+      const getItemLayout =
+        useCallback(
+          (_: any, index: number) => ({
+            length:
+              SCREEN_WIDTH,
+            offset:
+              SCREEN_WIDTH *
+              index,
+            index,
+          }),
+          []
+        );
+
+      const renderBannerItem =
+        useCallback(
+          ({
+            item,
+          }: {
+            item: string;
+          }) => (
+            <BannerSlideItem
+              item={item}
             />
+          ),
+          []
+        );
 
-            {avatarUrl ? (
-              <Image
-                source={{ uri: avatarUrl }}
-                style={
-                  styles.placeholderBannerAvatar
-                }
-              />
-            ) : (
-              <View
-                style={
-                  styles.placeholderBannerIconCircle
-                }
-              >
-                <Ionicons
-                  name="storefront-outline"
-                  size={42}
-                  color="#22CC71"
-                />
-              </View>
-            )}
-
-            <Text
+      return (
+        <View
+          style={
+            styles.carouselContainer
+          }
+        >
+          {totalBanners > 0 ? (
+            <FlatList
+              ref={flatListRef}
+              data={loopedBanners}
+              horizontal
+              pagingEnabled
+              snapToInterval={
+                SCREEN_WIDTH
+              }
+              snapToAlignment="center"
+              decelerationRate="fast"
+              showsHorizontalScrollIndicator={
+                false
+              }
+              nestedScrollEnabled
+              directionalLockEnabled
+              disableIntervalMomentum
+              initialScrollIndex={
+                totalBanners > 1
+                  ? 1
+                  : 0
+              }
+              keyExtractor={(
+                _,
+                index
+              ) =>
+                `banner-slide-${index}`
+              }
+              renderItem={
+                renderBannerItem
+              }
+              getItemLayout={
+                getItemLayout
+              }
+              scrollEventThrottle={
+                16
+              }
+              onScrollBeginDrag={
+                handleScrollBeginDrag
+              }
+              onScrollEndDrag={
+                handleScrollEndDrag
+              }
+              onMomentumScrollEnd={
+                handleMomentumScrollEnd
+              }
+              onScrollToIndexFailed={
+                handleScrollToIndexFailed
+              }
+            />
+          ) : (
+            <View
               style={
-                styles.placeholderBannerText
+                styles.placeholderBannerContainer
               }
             >
-              {shopName}
-            </Text>
-          </View>
-        )}
-
-        {/* TOP HEADER FLOATING ACTIONS */}
-        <View style={styles.bannerHeaderActions}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.actionIconButton}
-            hitSlop={8}
-          >
-            <Ionicons
-              name="arrow-back"
-              size={20}
-              color="#0D0D0D"
-            />
-          </Pressable>
-
-          <View
-            style={styles.bannerRightActions}
-          >
-            <Pressable
-              onPress={onToggleFavorite}
-              style={styles.actionIconButton}
-              hitSlop={8}
-            >
-              <Ionicons
-                name={
-                  isFavorite
-                    ? 'heart'
-                    : 'heart-outline'
-                }
-                size={20}
-                color={
-                  isFavorite
-                    ? '#EF4444'
-                    : '#0D0D0D'
+              <LinearGradient
+                colors={[
+                  '#0F172A',
+                  '#1E293B',
+                  '#0F172A',
+                ]}
+                start={{
+                  x: 0,
+                  y: 0,
+                }}
+                end={{
+                  x: 1,
+                  y: 1,
+                }}
+                style={
+                  StyleSheet.absoluteFill
                 }
               />
-            </Pressable>
 
+              {avatarUrl ? (
+                <Image
+                  source={{
+                    uri: avatarUrl,
+                  }}
+                  style={
+                    styles.placeholderBannerAvatar
+                  }
+                />
+              ) : (
+                <View
+                  style={
+                    styles.placeholderBannerIconCircle
+                  }
+                >
+                  <Ionicons
+                    name="storefront-outline"
+                    size={42}
+                    color="#22CC71"
+                  />
+                </View>
+              )}
+
+              <Text
+                style={
+                  styles.placeholderBannerText
+                }
+              >
+                {shopName}
+              </Text>
+            </View>
+          )}
+
+          {/* TOP HEADER FLOATING ACTIONS */}
+          <View
+            style={
+              styles.bannerHeaderActions
+            }
+          >
             <Pressable
-              onPress={onShare}
-              style={styles.actionIconButton}
+              onPress={() =>
+                router.back()
+              }
+              style={
+                styles.actionIconButton
+              }
               hitSlop={8}
             >
               <Ionicons
-                name="share-social-outline"
-                size={19}
+                name="arrow-back"
+                size={20}
                 color="#0D0D0D"
               />
             </Pressable>
-          </View>
-        </View>
 
-        {/* PAGINATION DOTS */}
-        {totalBanners > 1 && (
-          <View
-            style={styles.paginationContainer}
-          >
-            {banners.map((_, i) => {
-              const isActive =
-                i === activeIndex;
-
-              return (
-                <View
-                  key={`dot-${i}`}
-                  style={[
-                    styles.paginationDot,
-                    isActive
-                      ? styles.paginationDotActive
-                      : styles.paginationDotInactive,
-                  ]}
+            <View
+              style={
+                styles.bannerRightActions
+              }
+            >
+              <Pressable
+                onPress={
+                  onToggleFavorite
+                }
+                style={
+                  styles.actionIconButton
+                }
+                hitSlop={8}
+              >
+                <Ionicons
+                  name={
+                    isFavorite
+                      ? 'heart'
+                      : 'heart-outline'
+                  }
+                  size={20}
+                  color={
+                    isFavorite
+                      ? '#EF4444'
+                      : '#0D0D0D'
+                  }
                 />
-              );
-            })}
+              </Pressable>
+
+              <Pressable
+                onPress={onShare}
+                style={
+                  styles.actionIconButton
+                }
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="share-social-outline"
+                  size={19}
+                  color="#0D0D0D"
+                />
+              </Pressable>
+            </View>
           </View>
-        )}
-      </View>
-    );
-  }
-);
+
+          {/* PAGINATION DOTS */}
+          {totalBanners > 1 && (
+            <View
+              style={
+                styles.paginationContainer
+              }
+            >
+              {banners.map(
+                (_, i) => {
+                  const isActive =
+                    i ===
+                    activeIndex;
+
+                  return (
+                    <View
+                      key={`dot-${i}`}
+                      style={[
+                        styles.paginationDot,
+                        isActive
+                          ? styles.paginationDotActive
+                          : styles.paginationDotInactive,
+                      ]}
+                    />
+                  );
+                }
+              )}
+            </View>
+          )}
+        </View>
+      );
+    }
+  );
 
 // --- PRODUCT CARD COMPONENT ---
 function StaggeredProductCard({
@@ -774,54 +989,78 @@ function StaggeredProductCard({
   index: number;
   isStoreClosed: boolean;
   alreadyInCart: boolean;
-  onAddToCart: (p: Product) => void;
+  onAddToCart: (
+    p: Product
+  ) => void;
 }) {
-  const fadeAnim = useRef(
-    new Animated.Value(0)
-  ).current;
+  const fadeAnim =
+    useRef(
+      new Animated.Value(0)
+    ).current;
 
-  const translateYAnim = useRef(
-    new Animated.Value(18)
-  ).current;
+  const translateYAnim =
+    useRef(
+      new Animated.Value(18)
+    ).current;
 
-  const buttonScale = useRef(
-    new Animated.Value(1)
-  ).current;
+  const buttonScale =
+    useRef(
+      new Animated.Value(1)
+    ).current;
 
   const stockVal =
-    item.stock != null ? Number(item.stock) : 0;
+    item.stock != null
+      ? Number(item.stock)
+      : 0;
 
-  const isOutOfStock = stockVal === 0;
+  const isOutOfStock =
+    stockVal === 0;
 
   const isLowStock =
-    stockVal > 0 && stockVal <= 5;
+    stockVal > 0 &&
+    stockVal <= 5;
 
   const showMRP =
-    item.mrp && item.mrp > item.price;
+    item.mrp &&
+    item.mrp > item.price;
 
-  const discountPercent = showMRP
-    ? Math.round(
-        ((item.mrp! - item.price) /
-          item.mrp!) *
-          100
-      )
-    : 0;
+  const discountPercent =
+    showMRP
+      ? Math.round(
+          ((item.mrp! -
+            item.price) /
+            item.mrp!) *
+            100
+        )
+      : 0;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        delay: Math.min(index * 40, 200),
-        useNativeDriver: true,
-      }),
+      Animated.timing(
+        fadeAnim,
+        {
+          toValue: 1,
+          duration: 300,
+          delay: Math.min(
+            index * 40,
+            200
+          ),
+          useNativeDriver: true,
+        }
+      ),
 
-      Animated.spring(translateYAnim, {
-        toValue: 0,
-        delay: Math.min(index * 40, 200),
-        friction: 7,
-        useNativeDriver: true,
-      }),
+      Animated.spring(
+        translateYAnim,
+        {
+          toValue: 0,
+          delay: Math.min(
+            index * 40,
+            200
+          ),
+          friction: 7,
+          useNativeDriver: true,
+        }
+      ),
     ]).start();
   }, [
     fadeAnim,
@@ -841,17 +1080,23 @@ function StaggeredProductCard({
       router.push('/cart');
     } else {
       Animated.sequence([
-        Animated.timing(buttonScale, {
-          toValue: 0.92,
-          duration: 80,
-          useNativeDriver: true,
-        }),
+        Animated.timing(
+          buttonScale,
+          {
+            toValue: 0.92,
+            duration: 80,
+            useNativeDriver: true,
+          }
+        ),
 
-        Animated.spring(buttonScale, {
-          toValue: 1,
-          friction: 4,
-          useNativeDriver: true,
-        }),
+        Animated.spring(
+          buttonScale,
+          {
+            toValue: 1,
+            friction: 4,
+            useNativeDriver: true,
+          }
+        ),
       ]).start();
 
       onAddToCart(item);
@@ -859,7 +1104,8 @@ function StaggeredProductCard({
   };
 
   const isDisabled =
-    isOutOfStock || isStoreClosed;
+    isOutOfStock ||
+    isStoreClosed;
 
   return (
     <Animated.View
@@ -869,7 +1115,8 @@ function StaggeredProductCard({
           opacity: fadeAnim,
           transform: [
             {
-              translateY: translateYAnim,
+              translateY:
+                translateYAnim,
             },
           ],
         },
@@ -878,11 +1125,14 @@ function StaggeredProductCard({
       <Pressable
         style={({ pressed }) => [
           styles.cardInnerPressable,
-          pressed && { opacity: 0.92 },
+          pressed && {
+            opacity: 0.92,
+          },
         ]}
         onPress={() =>
           router.push({
-            pathname: '/product/[id]',
+            pathname:
+              '/product/[id]',
             params: {
               id: item.id,
             },
@@ -890,14 +1140,18 @@ function StaggeredProductCard({
         }
       >
         <View
-          style={styles.imageContainer}
+          style={
+            styles.imageContainer
+          }
         >
           {item.image_url ? (
             <Image
               source={{
                 uri: item.image_url,
               }}
-              style={styles.productImage}
+              style={
+                styles.productImage
+              }
               resizeMode="cover"
             />
           ) : (
@@ -914,21 +1168,25 @@ function StaggeredProductCard({
             </View>
           )}
 
-          {/* DISCOUNT TAG */}
           {showMRP &&
-            discountPercent > 0 && (
+            discountPercent >
+              0 && (
               <View
-                style={styles.discountBadge}
+                style={
+                  styles.discountBadge
+                }
               >
                 <Text
-                  style={styles.discountText}
+                  style={
+                    styles.discountText
+                  }
                 >
-                  {discountPercent}% OFF
+                  {discountPercent}%
+                  {' '}OFF
                 </Text>
               </View>
             )}
 
-          {/* STOCK TAG */}
           <View
             style={[
               styles.stockBadge,
@@ -975,24 +1233,38 @@ function StaggeredProductCard({
           </View>
         </View>
 
-        <View style={styles.cardContent}>
+        <View
+          style={
+            styles.cardContent
+          }
+        >
           <Text
-            style={styles.productName}
+            style={
+              styles.productName
+            }
             numberOfLines={2}
           >
             {item.name}
           </Text>
 
-          <View style={styles.priceRow}>
+          <View
+            style={
+              styles.priceRow
+            }
+          >
             <Text
-              style={styles.productPrice}
+              style={
+                styles.productPrice
+              }
             >
               ₹{item.price}
             </Text>
 
             {showMRP && (
               <Text
-                style={styles.productMRP}
+                style={
+                  styles.productMRP
+                }
               >
                 ₹{item.mrp}
               </Text>
@@ -1001,12 +1273,15 @@ function StaggeredProductCard({
         </View>
       </Pressable>
 
-      <View style={styles.actionRow}>
+      <View
+        style={styles.actionRow}
+      >
         <Animated.View
           style={{
             transform: [
               {
-                scale: buttonScale,
+                scale:
+                  buttonScale,
               },
             ],
             width: '100%',
@@ -1021,7 +1296,9 @@ function StaggeredProductCard({
                 !isStoreClosed &&
                 styles.alreadyInCartBtn,
             ]}
-            onPress={handleAddPress}
+            onPress={
+              handleAddPress
+            }
             disabled={isDisabled}
           >
             <Text
@@ -1061,9 +1338,9 @@ export default function StoreScreen() {
   const [
     vendorProfile,
     setVendorProfile,
-  ] = useState<VendorProfile | null>(
-    null
-  );
+  ] = useState<
+    VendorProfile | null
+  >(null);
 
   const [
     banners,
@@ -1078,7 +1355,9 @@ export default function StoreScreen() {
   const [
     categories,
     setCategories,
-  ] = useState<CategoryRow[]>([]);
+  ] = useState<CategoryRow[]>(
+    []
+  );
 
   const [
     customerCoords,
@@ -1096,7 +1375,9 @@ export default function StoreScreen() {
   const [
     selectedCategory,
     setSelectedCategory,
-  ] = useState<string | null>(null);
+  ] = useState<string | null>(
+    null
+  );
 
   const [
     cartItems,
@@ -1113,39 +1394,43 @@ export default function StoreScreen() {
     setIsFavorite,
   ] = useState(false);
 
-  // Entrance animations
-  const headerOpacity = useRef(
-    new Animated.Value(0)
-  ).current;
+  const headerOpacity =
+    useRef(
+      new Animated.Value(0)
+    ).current;
 
   const productsListOpacity =
     useRef(
       new Animated.Value(1)
     ).current;
 
-  // Floating Cart Animations
-  const cartSlideAnim = useRef(
-    new Animated.Value(120)
-  ).current;
+  const cartSlideAnim =
+    useRef(
+      new Animated.Value(120)
+    ).current;
 
-  const cartBounceAnim = useRef(
-    new Animated.Value(1)
-  ).current;
+  const cartBounceAnim =
+    useRef(
+      new Animated.Value(1)
+    ).current;
 
-  const prevCartCount = useRef(
-    cartItems.length
-  );
+  const prevCartCount =
+    useRef(cartItems.length);
 
   // --- REALTIME SUBSCRIPTION ---
   useEffect(() => {
     if (!vendorId) return;
 
     let profileChannel:
-      | ReturnType<typeof supabase.channel>
+      | ReturnType<
+          typeof supabase.channel
+        >
       | null = null;
 
     let bannerChannel:
-      | ReturnType<typeof supabase.channel>
+      | ReturnType<
+          typeof supabase.channel
+        >
       | null = null;
 
     const profileChannelName =
@@ -1154,7 +1439,6 @@ export default function StoreScreen() {
     const bannerChannelName =
       `customer-vendor-banners-${vendorId}`;
 
-    // Remove existing profile channel
     const existingChannels =
       supabase.getChannels();
 
@@ -1165,38 +1449,41 @@ export default function StoreScreen() {
           `realtime:${profileChannelName}`
       );
 
-    if (existingProfileChannel) {
+    if (
+      existingProfileChannel
+    ) {
       supabase.removeChannel(
         existingProfileChannel
       );
     }
 
-    // Create profile channel
-    profileChannel = supabase
-      .channel(profileChannelName)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'vendor_profiles',
-          filter: `vendor_id=eq.${vendorId}`,
-        },
-        (payload: any) => {
-          if (payload.new) {
-            setVendorProfile(
-              (prev) => ({
-                ...prev,
-                ...(payload.new as VendorProfile),
-              })
-            );
+    profileChannel =
+      supabase
+        .channel(
+          profileChannelName
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'vendor_profiles',
+            filter: `vendor_id=eq.${vendorId}`,
+          },
+          (payload: any) => {
+            if (payload.new) {
+              setVendorProfile(
+                (prev) => ({
+                  ...prev,
+                  ...(payload.new as VendorProfile),
+                })
+              );
+            }
           }
-        }
-      );
+        );
 
     profileChannel.subscribe();
 
-    // Remove existing banner channel
     const existingBannerChannel =
       existingChannels.find(
         (ch) =>
@@ -1204,27 +1491,31 @@ export default function StoreScreen() {
           `realtime:${bannerChannelName}`
       );
 
-    if (existingBannerChannel) {
+    if (
+      existingBannerChannel
+    ) {
       supabase.removeChannel(
         existingBannerChannel
       );
     }
 
-    // Create banner channel
-    bannerChannel = supabase
-      .channel(bannerChannelName)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'vendor_profile_banners',
-          filter: `vendor_id=eq.${vendorId}`,
-        },
-        () => {
-          fetchBannersOnly();
-        }
-      );
+    bannerChannel =
+      supabase
+        .channel(
+          bannerChannelName
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'vendor_profile_banners',
+            filter: `vendor_id=eq.${vendorId}`,
+          },
+          () => {
+            fetchBannersOnly();
+          }
+        );
 
     bannerChannel.subscribe();
 
@@ -1247,7 +1538,9 @@ export default function StoreScreen() {
   useEffect(() => {
     const unsubscribe =
       subscribeCart(() => {
-        const newCart = getCart();
+        const newCart =
+          getCart();
+
         const newCount =
           newCart.length;
 
@@ -1256,7 +1549,8 @@ export default function StoreScreen() {
         ]);
 
         if (
-          prevCartCount.current === 0 &&
+          prevCartCount.current ===
+            0 &&
           newCount > 0
         ) {
           Animated.spring(
@@ -1269,7 +1563,8 @@ export default function StoreScreen() {
             }
           ).start();
         } else if (
-          prevCartCount.current > 0 &&
+          prevCartCount.current >
+            0 &&
           newCount === 0
         ) {
           Animated.timing(
@@ -1360,7 +1655,9 @@ export default function StoreScreen() {
   async function fetchBannersOnly() {
     const bannersRes =
       await supabase
-        .from('vendor_profile_banners')
+        .from(
+          'vendor_profile_banners'
+        )
         .select(
           'banner_url, banner_order'
         )
@@ -1379,7 +1676,8 @@ export default function StoreScreen() {
           }
         );
 
-    const bannerList: string[] = [];
+    const bannerList: string[] =
+      [];
 
     if (
       !bannersRes.error &&
@@ -1409,18 +1707,23 @@ export default function StoreScreen() {
       );
     }
 
-    bannerList.forEach((url) =>
-      Image.prefetch(url)
+    bannerList.forEach(
+      (url) =>
+        Image.prefetch(url)
     );
 
-    setBanners(bannerList);
+    setBanners(
+      bannerList
+    );
   }
 
   // --- FETCH VENDOR + BANNERS ---
   async function fetchVendorAndBanners() {
     const vendorPromise =
       supabase
-        .from('vendor_profiles')
+        .from(
+          'vendor_profiles'
+        )
         .select(
           '*, vendors(shop_name)'
         )
@@ -1477,7 +1780,8 @@ export default function StoreScreen() {
       );
     }
 
-    const bannerList: string[] = [];
+    const bannerList: string[] =
+      [];
 
     if (
       !bannersRes.error &&
@@ -1507,18 +1811,23 @@ export default function StoreScreen() {
       );
     }
 
-    bannerList.forEach((url) =>
-      Image.prefetch(url)
+    bannerList.forEach(
+      (url) =>
+        Image.prefetch(url)
     );
 
-    setBanners(bannerList);
+    setBanners(
+      bannerList
+    );
   }
 
   // --- FETCH PRODUCTS + CATEGORIES ---
   async function fetchProductsAndCategories() {
     const catPromise =
       supabase
-        .from('product_categories')
+        .from(
+          'product_categories'
+        )
         .select(
           'id, name, icon'
         );
@@ -1607,7 +1916,9 @@ export default function StoreScreen() {
         error: addressError,
       } =
         await supabase
-          .from('customer_addresses')
+          .from(
+            'customer_addresses'
+          )
           .select(
             'latitude, longitude'
           )
@@ -1732,16 +2043,19 @@ export default function StoreScreen() {
       const catIds =
         new Set<string>();
 
-      products.forEach((p) => {
-        if (p.category_id) {
-          catIds.add(
-            p.category_id
-          );
+      products.forEach(
+        (p) => {
+          if (p.category_id) {
+            catIds.add(
+              p.category_id
+            );
+          }
         }
-      });
+      );
 
       return categories.filter(
-        (c) => catIds.has(c.id)
+        (c) =>
+          catIds.has(c.id)
       );
     }, [
       products,
@@ -1857,7 +2171,9 @@ export default function StoreScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+    >
       <Animated.FlatList
         key="store-grid-2-col"
         data={filteredProducts}
@@ -1904,7 +2220,7 @@ export default function StoreScreen() {
               }
             />
 
-            {/* FLOATING GLASS STORE INFO CARD */}
+            {/* FLOATING STORE INFO CARD */}
             <Animated.View
               style={[
                 styles.profileCard,
@@ -1932,6 +2248,7 @@ export default function StoreScreen() {
                       style={
                         styles.avatar
                       }
+                      resizeMode="cover"
                     />
                   ) : (
                     <View
@@ -2044,8 +2361,10 @@ export default function StoreScreen() {
                       styles.closedWarningText
                     }
                   >
-                    Store is closed. Orders
-                    are currently unavailable.
+                    Store is closed.
+                    Orders are
+                    currently
+                    unavailable.
                   </Text>
                 </View>
               )}
@@ -2068,9 +2387,11 @@ export default function StoreScreen() {
                       styles.busyWarningText
                     }
                   >
-                    High order volume.
-                    Deliveries may take
-                    slightly longer.
+                    High order
+                    volume.
+                    Deliveries may
+                    take slightly
+                    longer.
                   </Text>
                 </View>
               )}
@@ -2129,7 +2450,9 @@ export default function StoreScreen() {
                       styles.metricItemText
                     }
                   >
-                    {prepTimeText}
+                    {
+                      prepTimeText
+                    }
                   </Text>
                 </View>
 
@@ -2348,7 +2671,9 @@ export default function StoreScreen() {
             </View>
 
             <Text
-              style={styles.emptyTitle}
+              style={
+                styles.emptyTitle
+              }
             >
               No items found
             </Text>
@@ -2358,8 +2683,10 @@ export default function StoreScreen() {
                 styles.emptySubText
               }
             >
-              Try searching for something
-              else or pick another category.
+              Try searching for
+              something else or
+              pick another
+              category.
             </Text>
           </View>
         }
@@ -2413,7 +2740,9 @@ export default function StoreScreen() {
         >
           <Pressable
             onPress={() => {
-              if (!isStoreClosed) {
+              if (
+                !isStoreClosed
+              ) {
                 router.push(
                   '/cart'
                 );
@@ -2518,730 +2847,812 @@ export default function StoreScreen() {
 }
 
 // --- STYLES ---
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FAFAFA',
-  },
-
-  topSectionContainer: {
-    backgroundColor: '#FAFAFA',
-    marginBottom: 8,
-  },
-
-  // Carousel Container
-  carouselContainer: {
-    width: SCREEN_WIDTH,
-    height: BANNER_HEIGHT,
-    position: 'relative',
-    backgroundColor: '#0F172A',
-  },
-
-  bannerItemContainer: {
-    width: SCREEN_WIDTH,
-    height: BANNER_HEIGHT,
-    position: 'relative',
-  },
-
-  bannerImage: {
-    width: '100%',
-    height: '100%',
-  },
-
-  bannerGradientOverlay: {
-    ...StyleSheet.absoluteFill,
-  },
-
-  placeholderBannerContainer: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 10,
-  },
-
-  placeholderBannerAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 2,
-    borderColor: '#FFFFFF33',
-    marginBottom: 10,
-  },
-
-  placeholderBannerIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#1E293B',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-
-  placeholderBannerText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-
-  // Header Actions
-  bannerHeaderActions: {
-    position: 'absolute',
-    top: 44,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-
-  bannerRightActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-
-  actionIconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FFFFFFEE',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        '#FAFAFA',
     },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 3,
-  },
 
-  // Pagination
-  paginationContainer: {
-    position: 'absolute',
-    bottom: 28,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    alignItems: 'center',
-  },
-
-  paginationDot: {
-    height: 6,
-    borderRadius: 3,
-  },
-
-  paginationDotActive: {
-    width: 18,
-    backgroundColor: '#22CC71',
-  },
-
-  paginationDotInactive: {
-    width: 6,
-    backgroundColor: '#FFFFFF80',
-  },
-
-  // Profile Glass Card
-  profileCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    marginHorizontal: 16,
-    marginTop: -20,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
+    topSectionContainer: {
+      backgroundColor:
+        '#FAFAFA',
+      marginBottom: 8,
     },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
 
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-
-  avatarWrapper: {
-    marginTop: -28,
-  },
-
-  avatar: {
-    width: 58,
-    height: 58,
-    borderRadius: 16,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-  },
-
-  avatarPlaceholder: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#22CC71',
-  },
-
-  avatarText: {
-    color: '#FFF',
-    fontSize: 22,
-    fontWeight: '800',
-  },
-
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    gap: 5,
-  },
-
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-
-  statusBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  storeNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-
-  storeName: {
-    fontSize: 19,
-    fontWeight: '800',
-    color: '#0D0D0D',
-    letterSpacing: -0.3,
-  },
-
-  verifiedBadge: {
-    marginLeft: 6,
-  },
-
-  storeTagline: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '500',
-    marginTop: 2,
-  },
-
-  closedWarningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FEF2F2',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 10,
-    marginTop: 10,
-  },
-
-  closedWarningText: {
-    color: '#991B1B',
-    fontSize: 12,
-    fontWeight: '600',
-    flex: 1,
-  },
-
-  busyWarningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFF7ED',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 10,
-    marginTop: 10,
-  },
-
-  busyWarningText: {
-    color: '#9A3412',
-    fontSize: 12,
-    fontWeight: '600',
-    flex: 1,
-  },
-
-  cardDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 12,
-  },
-
-  metricsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  metricItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-
-  metricItemText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#334155',
-  },
-
-  metricDotSeparator: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: '#CBD5E1',
-    marginHorizontal: 10,
-  },
-
-  todayTimingsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-  },
-
-  todayTimingsText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-
-  // Search Container
-  searchContainer: {
-    paddingHorizontal: 16,
-    marginTop: 14,
-    marginBottom: 6,
-  },
-
-  searchInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 12,
-    height: 44,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
+    /*
+     * BANNER
+     *
+     * The vendor uploads 1600 × 600.
+     * This container follows exactly
+     * the same 8:3 ratio.
+     */
+    carouselContainer: {
+      width: SCREEN_WIDTH,
+      height: BANNER_HEIGHT,
+      position: 'relative',
+      backgroundColor:
+        '#F8FAFC',
+      overflow: 'hidden',
     },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
-  },
 
-  searchInput: {
-    flex: 1,
-    paddingHorizontal: 8,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#0D0D0D',
-  },
-
-  // Category Chips
-  categoriesList: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-  },
-
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-
-  chipSelected: {
-    backgroundColor: '#22CC71',
-    borderColor: '#22CC71',
-  },
-
-  chipInactive: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E2E8F0',
-  },
-
-  chipPressed: {
-    opacity: 0.8,
-  },
-
-  chipText: {
-    color: '#475569',
-    fontWeight: '600',
-    fontSize: 13,
-  },
-
-  chipTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-
-  // Products Grid
-  productsList: {
-    paddingBottom: 110,
-  },
-
-  rowWrapper: {
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-  },
-
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginBottom: 14,
-    width: CARD_WIDTH,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
+    bannerItemContainer: {
+      width: SCREEN_WIDTH,
+      height: BANNER_HEIGHT,
+      position: 'relative',
+      backgroundColor:
+        '#F8FAFC',
+      overflow: 'hidden',
     },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
-    overflow: 'hidden',
-  },
 
-  cardInnerPressable: {
-    width: '100%',
-  },
+    /*
+     * Full-width banner artwork.
+     *
+     * "contain" is intentional.
+     * It prevents cropping.
+     */
+    bannerImage: {
+      width: '100%',
+      height: '100%',
+    },
 
-  imageContainer: {
-    width: '100%',
-    aspectRatio: 1.15,
-    backgroundColor: '#F8FAFC',
-    position: 'relative',
-  },
+    /*
+     * Kept only for compatibility
+     * with the placeholder banner.
+     *
+     * Vendor banners no longer use
+     * a dark overlay.
+     */
+    bannerGradientOverlay: {
+      ...StyleSheet.absoluteFill,
+      display: 'none',
+    },
 
-  productImage: {
-    width: '100%',
-    height: '100%',
-  },
+    placeholderBannerContainer: {
+      width: '100%',
+      height: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingTop: 10,
+    },
 
-  productImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+    placeholderBannerAvatar: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      borderWidth: 2,
+      borderColor:
+        '#FFFFFF33',
+      marginBottom: 10,
+    },
 
-  stockBadge: {
-    position: 'absolute',
-    bottom: 6,
-    left: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
+    placeholderBannerIconCircle: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor:
+        '#1E293B',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor:
+        '#334155',
+    },
 
-  stockDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
+    placeholderBannerText: {
+      color: '#FFFFFF',
+      fontSize: 18,
+      fontWeight: '800',
+      letterSpacing: -0.3,
+    },
 
-  stockBadgeIn: {
-    backgroundColor: '#E8FBF0',
-  },
+    // Header Actions
+    bannerHeaderActions: {
+      position: 'absolute',
+      top: 44,
+      left: 16,
+      right: 16,
+      flexDirection: 'row',
+      justifyContent:
+        'space-between',
+      alignItems: 'center',
+      zIndex: 10,
+    },
 
-  stockBadgeLow: {
-    backgroundColor: '#FFEDD5',
-  },
+    bannerRightActions: {
+      flexDirection: 'row',
+      gap: 10,
+    },
 
-  stockBadgeOut: {
-    backgroundColor: '#FEE2E2',
-  },
+    actionIconButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor:
+        '#FFFFFFEE',
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.12,
+      shadowRadius: 4,
+      elevation: 3,
+    },
 
-  stockStatusText: {
-    fontSize: 9,
-    fontWeight: '700',
-  },
+    // Pagination
+    paginationContainer: {
+      position: 'absolute',
+      bottom: 14,
+      alignSelf: 'center',
+      flexDirection: 'row',
+      gap: 6,
+      alignItems: 'center',
+      zIndex: 5,
+    },
 
-  discountBadge: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    backgroundColor: '#22CC71',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-
-  discountText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-
-  cardContent: {
-    padding: 10,
-  },
-
-  productName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0D0D0D',
-    lineHeight: 17,
-    minHeight: 34,
-  },
-
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
-    marginTop: 6,
-  },
-
-  productPrice: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0D0D0D',
-  },
-
-  productMRP: {
-    fontSize: 11,
-    color: '#94A3B8',
-    textDecorationLine: 'line-through',
-    fontWeight: '500',
-  },
-
-  actionRow: {
-    paddingHorizontal: 10,
-    paddingBottom: 10,
-  },
-
-  addToCartButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#22CC71',
-    paddingVertical: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    borderRadius: 10,
-  },
-
-  addToCartButtonText: {
-    color: '#22CC71',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-
-  outOfStockBtn: {
-    backgroundColor: '#F1F5F9',
-    borderColor: '#E2E8F0',
-  },
-
-  outOfStockBtnText: {
-    color: '#94A3B8',
-  },
-
-  alreadyInCartBtn: {
-    backgroundColor: '#22CC71',
-    borderColor: '#22CC71',
-  },
-
-  alreadyInCartBtnText: {
-    color: '#FFFFFF',
-  },
-
-  // Floating Cart Bar
-  floatingCartContainer: {
-    position: 'absolute',
-    bottom: 20,
-    left: 16,
-    right: 16,
-    shadowColor: '#22CC71',
-    shadowOffset: {
-      width: 0,
+    paginationDot: {
       height: 6,
+      borderRadius: 3,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
 
-  floatingCartButton: {
-    backgroundColor: '#22CC71',
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    height: 54,
-  },
+    paginationDotActive: {
+      width: 18,
+      backgroundColor:
+        '#22CC71',
+    },
 
-  floatingCartDisabled: {
-    backgroundColor: '#94A3B8',
-  },
+    paginationDotInactive: {
+      width: 6,
+      backgroundColor:
+        '#64748B80',
+    },
 
-  floatingCartLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
+    // Profile Glass Card
+    profileCard: {
+      backgroundColor:
+        '#FFFFFF',
+      borderRadius: 20,
+      marginHorizontal: 16,
+      marginTop: -20,
+      padding: 16,
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 4,
+      },
+      shadowOpacity: 0.06,
+      shadowRadius: 12,
+      elevation: 4,
+      borderWidth: 1,
+      borderColor:
+        '#F1F5F9',
+    },
 
-  cartIconWrapper: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
+    cardHeaderRow: {
+      flexDirection: 'row',
+      justifyContent:
+        'space-between',
+      alignItems: 'flex-start',
+    },
 
-  cartCountBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: '#0D0D0D',
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
+    avatarWrapper: {
+      marginTop: -28,
+    },
 
-  cartCountText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '800',
-  },
+    avatar: {
+      width: 58,
+      height: 58,
+      borderRadius: 16,
+      backgroundColor:
+        '#F8FAFC',
+      borderWidth: 3,
+      borderColor:
+        '#FFFFFF',
+    },
 
-  cartPriceText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
+    avatarPlaceholder: {
+      justifyContent:
+        'center',
+      alignItems: 'center',
+      backgroundColor:
+        '#22CC71',
+    },
 
-  cartSubText: {
-    color: '#E8FBF0',
-    fontSize: 10,
-    fontWeight: '500',
-  },
+    avatarText: {
+      color: '#FFF',
+      fontSize: 22,
+      fontWeight: '800',
+    },
 
-  floatingCartRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
+    statusBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 20,
+      gap: 5,
+    },
 
-  viewCartText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
+    statusDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+    },
 
-  // Empty State
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 32,
-  },
+    statusBadgeText: {
+      fontSize: 12,
+      fontWeight: '700',
+    },
 
-  emptyIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
+    storeNameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 8,
+    },
 
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0D0D0D',
-  },
+    storeName: {
+      fontSize: 19,
+      fontWeight: '800',
+      color: '#0D0D0D',
+      letterSpacing: -0.3,
+    },
 
-  emptySubText: {
-    fontSize: 13,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 4,
-    lineHeight: 18,
-  },
+    verifiedBadge: {
+      marginLeft: 6,
+    },
 
-  // Skeleton Loaders
-  skeletonBanner: {
-    width: '100%',
-    height: BANNER_HEIGHT,
-  },
+    storeTagline: {
+      fontSize: 13,
+      color: '#64748B',
+      fontWeight: '500',
+      marginTop: 2,
+    },
 
-  skeletonAvatar: {
-    width: 58,
-    height: 58,
-    borderRadius: 16,
-    marginTop: -20,
-  },
+    closedWarningBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor:
+        '#FEF2F2',
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 10,
+      marginTop: 10,
+    },
 
-  skeletonBadge: {
-    width: 60,
-    height: 20,
-    borderRadius: 10,
-  },
+    closedWarningText: {
+      color: '#991B1B',
+      fontSize: 12,
+      fontWeight: '600',
+      flex: 1,
+    },
 
-  skeletonTitle: {
-    width: '60%',
-    height: 20,
-    borderRadius: 4,
-    marginTop: 12,
-  },
+    busyWarningBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor:
+        '#FFF7ED',
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 10,
+      marginTop: 10,
+    },
 
-  skeletonSubTitle: {
-    width: '40%',
-    height: 14,
-    borderRadius: 4,
-    marginTop: 8,
-  },
+    busyWarningText: {
+      color: '#9A3412',
+      fontSize: 12,
+      fontWeight: '600',
+      flex: 1,
+    },
 
-  skeletonMetrics: {
-    width: '100%',
-    height: 24,
-    borderRadius: 6,
-    marginTop: 12,
-  },
+    cardDivider: {
+      height: 1,
+      backgroundColor:
+        '#F1F5F9',
+      marginVertical: 12,
+    },
 
-  skeletonGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 16,
-    gap: 12,
-    justifyContent: 'space-between',
-  },
+    metricsContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
 
-  skeletonCard: {
-    width: CARD_WIDTH,
-    height: 220,
-    borderRadius: 16,
-  },
-});
+    metricItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+
+    metricItemText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: '#334155',
+    },
+
+    metricDotSeparator: {
+      width: 3,
+      height: 3,
+      borderRadius: 1.5,
+      backgroundColor:
+        '#CBD5E1',
+      marginHorizontal: 10,
+    },
+
+    todayTimingsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 8,
+    },
+
+    todayTimingsText: {
+      fontSize: 12,
+      color: '#64748B',
+      fontWeight: '500',
+    },
+
+    // Search Container
+    searchContainer: {
+      paddingHorizontal: 16,
+      marginTop: 14,
+      marginBottom: 6,
+    },
+
+    searchInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor:
+        '#FFFFFF',
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor:
+        '#E2E8F0',
+      paddingHorizontal: 12,
+      height: 44,
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 1,
+      },
+      shadowOpacity: 0.03,
+      shadowRadius: 4,
+      elevation: 1,
+    },
+
+    searchInput: {
+      flex: 1,
+      paddingHorizontal: 8,
+      fontSize: 14,
+      fontWeight: '500',
+      color: '#0D0D0D',
+    },
+
+    // Category Chips
+    categoriesList: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      gap: 8,
+    },
+
+    chip: {
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 20,
+      borderWidth: 1,
+    },
+
+    chipSelected: {
+      backgroundColor:
+        '#22CC71',
+      borderColor:
+        '#22CC71',
+    },
+
+    chipInactive: {
+      backgroundColor:
+        '#FFFFFF',
+      borderColor:
+        '#E2E8F0',
+    },
+
+    chipPressed: {
+      opacity: 0.8,
+    },
+
+    chipText: {
+      color: '#475569',
+      fontWeight: '600',
+      fontSize: 13,
+    },
+
+    chipTextSelected: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+
+    // Products Grid
+    productsList: {
+      paddingBottom: 110,
+    },
+
+    rowWrapper: {
+      justifyContent:
+        'space-between',
+      paddingHorizontal: 16,
+    },
+
+    card: {
+      backgroundColor:
+        '#FFFFFF',
+      borderRadius: 16,
+      marginBottom: 14,
+      width: CARD_WIDTH,
+      borderWidth: 1,
+      borderColor:
+        '#F1F5F9',
+      justifyContent:
+        'space-between',
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.03,
+      shadowRadius: 6,
+      elevation: 2,
+      overflow: 'hidden',
+    },
+
+    cardInnerPressable: {
+      width: '100%',
+    },
+
+    imageContainer: {
+      width: '100%',
+      aspectRatio: 1.15,
+      backgroundColor:
+        '#F8FAFC',
+      position: 'relative',
+    },
+
+    productImage: {
+      width: '100%',
+      height: '100%',
+    },
+
+    productImagePlaceholder: {
+      width: '100%',
+      height: '100%',
+      alignItems: 'center',
+      justifyContent:
+        'center',
+    },
+
+    stockBadge: {
+      position: 'absolute',
+      bottom: 6,
+      left: 6,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 3,
+      borderRadius: 6,
+    },
+
+    stockDot: {
+      width: 5,
+      height: 5,
+      borderRadius: 2.5,
+    },
+
+    stockBadgeIn: {
+      backgroundColor:
+        '#E8FBF0',
+    },
+
+    stockBadgeLow: {
+      backgroundColor:
+        '#FFEDD5',
+    },
+
+    stockBadgeOut: {
+      backgroundColor:
+        '#FEE2E2',
+    },
+
+    stockStatusText: {
+      fontSize: 9,
+      fontWeight: '700',
+    },
+
+    discountBadge: {
+      position: 'absolute',
+      top: 6,
+      left: 6,
+      backgroundColor:
+        '#22CC71',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+    },
+
+    discountText: {
+      color: '#FFFFFF',
+      fontSize: 9,
+      fontWeight: '800',
+    },
+
+    cardContent: {
+      padding: 10,
+    },
+
+    productName: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: '#0D0D0D',
+      lineHeight: 17,
+      minHeight: 34,
+    },
+
+    priceRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: 6,
+      marginTop: 6,
+    },
+
+    productPrice: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: '#0D0D0D',
+    },
+
+    productMRP: {
+      fontSize: 11,
+      color: '#94A3B8',
+      textDecorationLine:
+        'line-through',
+      fontWeight: '500',
+    },
+
+    actionRow: {
+      paddingHorizontal: 10,
+      paddingBottom: 10,
+    },
+
+    addToCartButton: {
+      backgroundColor:
+        '#FFFFFF',
+      borderWidth: 1.5,
+      borderColor:
+        '#22CC71',
+      paddingVertical: 7,
+      alignItems: 'center',
+      justifyContent:
+        'center',
+      width: '100%',
+      borderRadius: 10,
+    },
+
+    addToCartButtonText: {
+      color: '#22CC71',
+      fontSize: 12,
+      fontWeight: '800',
+    },
+
+    outOfStockBtn: {
+      backgroundColor:
+        '#F1F5F9',
+      borderColor:
+        '#E2E8F0',
+    },
+
+    outOfStockBtnText: {
+      color: '#94A3B8',
+    },
+
+    alreadyInCartBtn: {
+      backgroundColor:
+        '#22CC71',
+      borderColor:
+        '#22CC71',
+    },
+
+    alreadyInCartBtnText: {
+      color: '#FFFFFF',
+    },
+
+    // Floating Cart Bar
+    floatingCartContainer: {
+      position: 'absolute',
+      bottom: 20,
+      left: 16,
+      right: 16,
+      shadowColor: '#22CC71',
+      shadowOffset: {
+        width: 0,
+        height: 6,
+      },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 8,
+    },
+
+    floatingCartButton: {
+      backgroundColor:
+        '#22CC71',
+      borderRadius: 16,
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      flexDirection: 'row',
+      justifyContent:
+        'space-between',
+      alignItems: 'center',
+      height: 54,
+    },
+
+    floatingCartDisabled: {
+      backgroundColor:
+        '#94A3B8',
+    },
+
+    floatingCartLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+
+    cartIconWrapper: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      backgroundColor:
+        '#FFFFFF',
+      alignItems: 'center',
+      justifyContent:
+        'center',
+      position: 'relative',
+    },
+
+    cartCountBadge: {
+      position: 'absolute',
+      top: -4,
+      right: -4,
+      backgroundColor:
+        '#0D0D0D',
+      borderRadius: 8,
+      minWidth: 16,
+      height: 16,
+      alignItems: 'center',
+      justifyContent:
+        'center',
+      paddingHorizontal: 3,
+    },
+
+    cartCountText: {
+      color: '#FFFFFF',
+      fontSize: 9,
+      fontWeight: '800',
+    },
+
+    cartPriceText: {
+      color: '#FFFFFF',
+      fontSize: 15,
+      fontWeight: '800',
+    },
+
+    cartSubText: {
+      color: '#E8FBF0',
+      fontSize: 10,
+      fontWeight: '500',
+    },
+
+    floatingCartRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+
+    viewCartText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+
+    // Empty State
+    emptyStateContainer: {
+      alignItems: 'center',
+      justifyContent:
+        'center',
+      paddingVertical: 60,
+      paddingHorizontal: 32,
+    },
+
+    emptyIconCircle: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      backgroundColor:
+        '#F1F5F9',
+      alignItems: 'center',
+      justifyContent:
+        'center',
+      marginBottom: 12,
+    },
+
+    emptyTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: '#0D0D0D',
+    },
+
+    emptySubText: {
+      fontSize: 13,
+      color: '#64748B',
+      textAlign: 'center',
+      marginTop: 4,
+      lineHeight: 18,
+    },
+
+    // Skeleton Loaders
+    skeletonBanner: {
+      width: '100%',
+      height: BANNER_HEIGHT,
+    },
+
+    skeletonAvatar: {
+      width: 58,
+      height: 58,
+      borderRadius: 16,
+      marginTop: -20,
+    },
+
+    skeletonBadge: {
+      width: 60,
+      height: 20,
+      borderRadius: 10,
+    },
+
+    skeletonTitle: {
+      width: '60%',
+      height: 20,
+      borderRadius: 4,
+      marginTop: 12,
+    },
+
+    skeletonSubTitle: {
+      width: '40%',
+      height: 14,
+      borderRadius: 4,
+      marginTop: 8,
+    },
+
+    skeletonMetrics: {
+      width: '100%',
+      height: 24,
+      borderRadius: 6,
+      marginTop: 12,
+    },
+
+    skeletonGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      padding: 16,
+      gap: 12,
+      justifyContent:
+        'space-between',
+    },
+
+    skeletonCard: {
+      width: CARD_WIDTH,
+      height: 220,
+      borderRadius: 16,
+    },
+  });
