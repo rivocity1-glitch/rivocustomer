@@ -6,7 +6,7 @@ import { Alert, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, 
 
 export default function ContactScreen() {
   const router = useRouter();
-  const supportEmail = 'rivo.cityhelp1@gmail.com';
+  const supportEmail = 'support@rivo.city';
 
   const handleCopyEmail = async () => {
     await Clipboard.setStringAsync(supportEmail);
