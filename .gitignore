@@ -21,3 +21,7 @@ expo-env.d.ts
 # Android signing credentials
 android/app/*.keystore
 android/app/*.jks
+
+# RivoCity Android signing keys
+android/app/*.keystore
+android/app/*.jks
