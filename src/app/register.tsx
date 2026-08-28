@@ -357,6 +357,108 @@ export default function RegisterScreen() {
   };
 
   // ---------------------------------------------------------
+  // RESOLVE MANUAL ADDRESS TO DELIVERY COORDINATES
+  // ---------------------------------------------------------
+  //
+  // A customer can provide either:
+  // 1. Current GPS location, OR
+  // 2. A valid 6-digit PIN code.
+  //
+  // If GPS coordinates are missing but a PIN is supplied, resolve
+  // the PIN/address before registration so checkout can calculate
+  // vendor -> customer distance and delivery fees.
+  const ensureDeliveryCoordinates = async (): Promise<boolean> => {
+    if (
+      latitude != null &&
+      longitude != null &&
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude)
+    ) {
+      return true;
+    }
+
+    const cleanPin = pinCode.trim();
+
+    if (!/^\d{6}$/.test(cleanPin)) {
+      Alert.alert(
+        'Location Required',
+        'Please enter a valid 6-digit PIN code or use Get Current Location.'
+      );
+      return false;
+    }
+
+    try {
+      setDetectingLocation(true);
+
+      const addressQuery = [
+        addressLine1.trim(),
+        addressLine2.trim(),
+        city.trim(),
+        state.trim(),
+        cleanPin,
+        'India',
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      let results = await Location.geocodeAsync(addressQuery);
+
+      if (!results || results.length === 0) {
+        results = await Location.geocodeAsync(
+          `${cleanPin}, ${city.trim()}, ${state.trim()}, India`
+        );
+      }
+
+      if (!results || results.length === 0) {
+        Alert.alert(
+          'Location Not Found',
+          'We could not determine a delivery location from this PIN code. Please use Get Current Location and try again.'
+        );
+        return false;
+      }
+
+      const resolved = results.find(
+        (item) =>
+          Number.isFinite(item.latitude) &&
+          Number.isFinite(item.longitude)
+      );
+
+      if (!resolved) {
+        Alert.alert(
+          'Location Not Found',
+          'We could not determine coordinates from this PIN code. Please use Get Current Location and try again.'
+        );
+        return false;
+      }
+
+      setLatitude(resolved.latitude);
+      setLongitude(resolved.longitude);
+
+      console.log(
+        'Manual delivery location resolved:',
+        resolved.latitude,
+        resolved.longitude
+      );
+
+      return true;
+    } catch (error) {
+      console.error(
+        'Manual address geocoding error:',
+        error
+      );
+
+      Alert.alert(
+        'Location Error',
+        'Unable to determine your delivery location from the PIN code. Please use Get Current Location and try again.'
+      );
+
+      return false;
+    } finally {
+      setDetectingLocation(false);
+    }
+  };
+
+  // ---------------------------------------------------------
   // SEND REGISTRATION OTP
   // ---------------------------------------------------------
 
@@ -375,12 +477,35 @@ export default function RegisterScreen() {
       !confirmPassword ||
       !addressLine1.trim() ||
       !city.trim() ||
-      !state.trim() ||
-      !pinCode.trim()
+      !state.trim()
     ) {
       Alert.alert(
         'Missing Fields',
         'Please complete all required fields marked with (*).'
+      );
+      return;
+    }
+
+    /*
+     * DELIVERY LOCATION REQUIREMENT
+     *
+     * Exact GPS coordinates OR a valid 6-digit PIN are required.
+     * If only the PIN is available, resolve it before registration.
+     */
+    const hasGpsCoordinates =
+      latitude != null &&
+      longitude != null &&
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude);
+
+    const hasValidPin = /^\d{6}$/.test(
+      pinCode.trim()
+    );
+
+    if (!hasGpsCoordinates && !hasValidPin) {
+      Alert.alert(
+        'Location Required',
+        'Please enter a valid 6-digit PIN code or use Get Current Location. One of these is required to calculate delivery fees.'
       );
       return;
     }
@@ -430,6 +555,18 @@ export default function RegisterScreen() {
     setLoading(true);
 
     try {
+      /*
+       * Resolve a manually entered PIN into coordinates before
+       * starting registration. This guarantees delivery coordinates
+       * are saved even when the customer does not use GPS.
+       */
+      const coordinatesReady =
+        await ensureDeliveryCoordinates();
+
+      if (!coordinatesReady) {
+        return;
+      }
+
       /*
        * We intentionally use OTP for email verification.
        *
@@ -1032,7 +1169,7 @@ export default function RegisterScreen() {
                       styles.getCurrentLocationButtonText
                     }
                   >
-                    Get Current Location
+                    Get Current Location (Recommended)
                   </Text>
                 )}
               </TouchableOpacity>
@@ -1219,7 +1356,7 @@ export default function RegisterScreen() {
               {/* PIN CODE */}
 
               <Text style={styles.fieldLabel}>
-                Pin Code *
+                Pin Code {latitude == null || longitude == null ? '*' : '(Optional with GPS)'}
               </Text>
 
               <View
@@ -1247,6 +1384,11 @@ export default function RegisterScreen() {
                   }
                 />
               </View>
+
+              <Text style={styles.locationRequirementHint}>
+                Enter a valid 6-digit PIN or use Get Current Location.
+                One location method is required for delivery fee calculation.
+              </Text>
 
               {/* TERMS */}
 
@@ -1626,6 +1768,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94A3B8',
     marginTop: -5,
+    marginBottom: 8,
+  },
+
+  locationRequirementHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#64748B',
+    fontWeight: '600',
+    marginTop: -6,
     marginBottom: 8,
   },
 
