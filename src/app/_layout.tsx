@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import "../global.css";
 
 import AnimatedSplash from "../../src/components/AnimatedSplash";
+import FloatingFeedback from "../../src/components/FloatingFeedback";
 import { saveCustomerPushToken } from "../lib/pushNotifications";
 import { supabase } from "../lib/supabase";
 
@@ -48,12 +49,6 @@ export default function RootLayout() {
             customerError
           );
 
-          /*
-           * Do not immediately sign out.
-           *
-           * During OTP registration, Supabase fires SIGNED_IN
-           * before register.tsx finishes creating the customer row.
-           */
           if (retryCount < 10) {
             setTimeout(() => {
               if (mounted) {
@@ -77,12 +72,6 @@ export default function RootLayout() {
           return;
         }
 
-        /*
-         * Customer row may not exist yet because OTP verification
-         * happens before registration profile creation.
-         *
-         * Wait instead of signing the user out.
-         */
         if (!customer) {
           if (retryCount < 10) {
             setTimeout(() => {
@@ -124,10 +113,6 @@ export default function RootLayout() {
           error
         );
 
-        /*
-         * Give registration enough time to finish before
-         * treating the session as invalid.
-         */
         if (retryCount < 10) {
           setTimeout(() => {
             if (mounted) {
@@ -225,6 +210,15 @@ export default function RootLayout() {
     );
   }
 
+  const showFloatingFeedback =
+    session &&
+    isCustomerVerified &&
+    segments[0] !== "login" &&
+    segments[0] !== "register" &&
+    segments[0] !== "support" &&
+    segments[0] !== "feedback" &&
+    segments[0] !== "report-problem";
+
   return (
     <>
       <StatusBar style="dark" />
@@ -234,6 +228,10 @@ export default function RootLayout() {
           headerShown: false,
         }}
       />
+
+      {showFloatingFeedback && (
+        <FloatingFeedback />
+      )}
     </>
   );
 }
