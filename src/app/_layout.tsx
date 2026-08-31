@@ -29,7 +29,6 @@ export default function RootLayout() {
     ) => {
       if (!currentSession?.user) {
         if (!mounted) return;
-
         setSession(null);
         setIsCustomerVerified(false);
         setIsAuthLoaded(true);
@@ -37,38 +36,23 @@ export default function RootLayout() {
       }
 
       try {
-        const {
-          data: customer,
-          error: customerError,
-        } = await supabase
+        const { data: customer, error: customerError } = await supabase
           .from("customers")
           .select("id")
           .eq("auth_user_id", currentSession.user.id)
           .maybeSingle();
 
         if (customerError) {
-          console.error(
-            "Customer session validation error:",
-            customerError
-          );
-
+          console.error("Customer session validation error:", customerError);
           if (retryCount < 10) {
             setTimeout(() => {
-              if (mounted) {
-                validateCustomerSession(
-                  currentSession,
-                  retryCount + 1
-                );
-              }
+              if (mounted) validateCustomerSession(currentSession, retryCount + 1);
             }, 500);
-
             return;
           }
 
           await supabase.auth.signOut();
-
           if (!mounted) return;
-
           setSession(null);
           setIsCustomerVerified(false);
           setIsAuthLoaded(true);
@@ -78,25 +62,14 @@ export default function RootLayout() {
         if (!customer) {
           if (retryCount < 10) {
             setTimeout(() => {
-              if (mounted) {
-                validateCustomerSession(
-                  currentSession,
-                  retryCount + 1
-                );
-              }
+              if (mounted) validateCustomerSession(currentSession, retryCount + 1);
             }, 500);
-
             return;
           }
 
-          console.warn(
-            "Authenticated user has no Rivo customer record."
-          );
-
+          console.warn("Authenticated user has no Rivo customer record.");
           await supabase.auth.signOut();
-
           if (!mounted) return;
-
           setSession(null);
           setIsCustomerVerified(false);
           setIsAuthLoaded(true);
@@ -104,68 +77,50 @@ export default function RootLayout() {
         }
 
         if (!mounted) return;
-
         setSession(currentSession);
         setIsCustomerVerified(true);
         setIsAuthLoaded(true);
-
         saveCustomerPushToken(currentSession.user.id);
       } catch (error) {
-        console.error(
-          "Customer session validation failed:",
-          error
-        );
+        console.error("Customer session validation failed:", error);
 
         if (retryCount < 10) {
           setTimeout(() => {
-            if (mounted) {
-              validateCustomerSession(
-                currentSession,
-                retryCount + 1
-              );
-            }
+            if (mounted) validateCustomerSession(currentSession, retryCount + 1);
           }, 500);
-
           return;
         }
 
         await supabase.auth.signOut();
-
         if (!mounted) return;
-
         setSession(null);
         setIsCustomerVerified(false);
         setIsAuthLoaded(true);
       }
     };
 
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
-        validateCustomerSession(session);
-      });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      validateCustomerSession(session);
+    });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (event, currentSession) => {
-        if (
-          event === "SIGNED_IN" ||
-          event === "TOKEN_REFRESHED" ||
-          event === "INITIAL_SESSION"
-        ) {
-          validateCustomerSession(currentSession);
-        }
-
-        if (event === "SIGNED_OUT") {
-          if (!mounted) return;
-
-          setSession(null);
-          setIsCustomerVerified(false);
-          setIsAuthLoaded(true);
-        }
+    } = supabase.auth.onAuthStateChange((event, currentSession) => {
+      if (
+        event === "SIGNED_IN" ||
+        event === "TOKEN_REFRESHED" ||
+        event === "INITIAL_SESSION"
+      ) {
+        validateCustomerSession(currentSession);
       }
-    );
+
+      if (event === "SIGNED_OUT") {
+        if (!mounted) return;
+        setSession(null);
+        setIsCustomerVerified(false);
+        setIsAuthLoaded(true);
+      }
+    });
 
     return () => {
       mounted = false;
@@ -174,71 +129,44 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthLoaded || showSplash) {
-      return;
-    }
+    if (!isAuthLoaded || showSplash) return;
 
     const inAuthGroup =
       segments[0] === "login" ||
       segments[0] === "register";
 
     if (!session || !isCustomerVerified) {
-      if (!inAuthGroup) {
-        router.replace("/login");
-      }
-
+      if (!inAuthGroup) router.replace("/login");
       return;
     }
 
-    if (
-      session &&
-      isCustomerVerified &&
-      inAuthGroup
-    ) {
+    if (session && isCustomerVerified && inAuthGroup) {
       router.replace("/");
     }
-  }, [
-    session,
-    isCustomerVerified,
-    isAuthLoaded,
-    showSplash,
-    segments,
-  ]);
+  }, [session, isCustomerVerified, isAuthLoaded, showSplash, segments]);
 
   if (showSplash) {
-    return (
-      <AnimatedSplash
-        onFinish={() => setShowSplash(false)}
-      />
-    );
+    return <AnimatedSplash onFinish={() => setShowSplash(false)} />;
   }
 
   const showFloatingFeedback =
     Boolean(session && isCustomerVerified) &&
     segments[0] !== "login" &&
     segments[0] !== "register" &&
-    segments[0] !== "support-lite" &&
-    segments[0] !== "feedback" &&
-    segments[0] !== "report-problem";
+    segments[0] !== "support-lite";
 
   return (
     <View style={styles.root}>
       <StatusBar style="dark" />
 
-      <Stack
-        screenOptions={{
-          headerShown: false,
-        }}
-      />
+      <Stack screenOptions={{ headerShown: false }} />
 
       {showFloatingFeedback && (
         <View
           pointerEvents="box-none"
           style={[
             styles.floatingLayer,
-            {
-              paddingBottom: Math.max(insets.bottom, 12) + 16,
-            },
+            { paddingBottom: Math.max(insets.bottom, 12) + 24 },
           ]}
         >
           <FloatingFeedback />
@@ -253,7 +181,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   floatingLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "flex-end",
     justifyContent: "flex-end",
     paddingRight: 16,
