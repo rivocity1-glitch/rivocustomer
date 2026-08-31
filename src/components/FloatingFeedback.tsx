@@ -8,18 +8,11 @@ export default function FloatingFeedback() {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Send feedback"
-      onPress={() => router.push('/feedback' as any)}
-      style={({ pressed }) => [
-        styles.button,
-        pressed && styles.pressed,
-      ]}
+      accessibilityLabel="Open Help and Support"
+      onPress={() => router.push('/support-lite' as any)}
+      style={({ pressed }) => [styles.button, pressed && styles.pressed]}
     >
-      <Ionicons
-        name="chatbubble-ellipses-outline"
-        size={21}
-        color="#FFFFFF"
-      />
+      <Ionicons name="headset-outline" size={21} color="#FFFFFF" />
     </Pressable>
   );
 }
