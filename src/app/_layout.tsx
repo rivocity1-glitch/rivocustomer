@@ -166,7 +166,7 @@ export default function RootLayout() {
           pointerEvents="box-none"
           style={[
             styles.floatingLayer,
-            { paddingBottom: Math.max(insets.bottom, 12) + 24 },
+            { paddingBottom: Math.max(insets.bottom, 12) + 96 },
           ]}
         >
           <FloatingFeedback />
