@@ -1,6 +1,8 @@
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
+import { StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import "../global.css";
 
 import AnimatedSplash from "../../src/components/AnimatedSplash";
@@ -16,6 +18,7 @@ export default function RootLayout() {
 
   const router = useRouter();
   const segments = useSegments();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     let mounted = true;
@@ -211,16 +214,15 @@ export default function RootLayout() {
   }
 
   const showFloatingFeedback =
-    session &&
-    isCustomerVerified &&
+    Boolean(session && isCustomerVerified) &&
     segments[0] !== "login" &&
     segments[0] !== "register" &&
-    segments[0] !== "support" &&
+    segments[0] !== "support-lite" &&
     segments[0] !== "feedback" &&
     segments[0] !== "report-problem";
 
   return (
-    <>
+    <View style={styles.root}>
       <StatusBar style="dark" />
 
       <Stack
@@ -230,8 +232,31 @@ export default function RootLayout() {
       />
 
       {showFloatingFeedback && (
-        <FloatingFeedback />
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.floatingLayer,
+            {
+              paddingBottom: Math.max(insets.bottom, 12) + 16,
+            },
+          ]}
+        >
+          <FloatingFeedback />
+        </View>
       )}
-    </>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  floatingLayer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "flex-end",
+    justifyContent: "flex-end",
+    paddingRight: 16,
+    zIndex: 100,
+  },
+});
