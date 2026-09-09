@@ -3,6 +3,5 @@ module.exports = function (api) {
 
   return {
     presets: ["babel-preset-expo"],
-    plugins: ["./scripts/normalize-product-image-babel-plugin.js"],
   };
 };
