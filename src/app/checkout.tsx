@@ -1271,10 +1271,25 @@ export default function CheckoutScreen() {
               ),
 
             payment_method:
-              'COD',
+              paymentMethod,
 
             payment_status:
               'pending',
+
+            gateway_name:
+              paymentMethod === 'UPI'
+                ? 'RivoCity UPI QR'
+                : null,
+
+            gateway_response:
+              paymentMethod === 'UPI'
+                ? {
+                    transaction_reference:
+                      upiTransactionReference.trim(),
+                    verification_status:
+                      'pending_admin_verification',
+                  }
+                : null,
           });
 
         if (paymentError) {
