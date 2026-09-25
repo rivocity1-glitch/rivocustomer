@@ -111,7 +111,14 @@ export function subscribeCart(listener: () => void) {
 }
 
 export function addToCart(product: any) {
-  if (!product || !product.id) return;
+  if (!product || !product.id) return false;
+
+  const productVendorId = String(product.vendor_id || '');
+  const existingVendorId = cart.length > 0 ? String(cart[0].vendor_id || '') : '';
+
+  if (existingVendorId && productVendorId && existingVendorId !== productVendorId) {
+    return false;
+  }
 
   const existingItem = cart.find((item) => String(item.id) === String(product.id));
 
@@ -136,6 +143,7 @@ export function addToCart(product: any) {
 
   saveCartLocally();
   notifyCartChange();
+  return true;
 }
 
 export function increaseQuantity(productId: string) {

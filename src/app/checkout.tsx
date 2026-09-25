@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -69,8 +68,6 @@ export default function CheckoutScreen() {
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'UPI'>('COD');
-  const [upiTransactionReference, setUpiTransactionReference] = useState('');
 
   const [showAddressForm, setShowAddressForm] = useState(false);
 
@@ -861,20 +858,6 @@ export default function CheckoutScreen() {
       /*
        * VALIDATE THAT EVERY ITEM HAS A VENDOR
        */
-      const vendorIds = Array.from(
-        new Set(
-          cart.map(item => String(item.vendor_id || '')).filter(Boolean)
-        )
-      );
-
-      if (vendorIds.length !== 1) {
-        Alert.alert(
-          'One Store Per Order',
-          'RivoCity currently supports one store per order. Please remove products from another store before checkout.'
-        );
-        return;
-      }
-
       const itemsWithoutVendor = cart.filter(
         item => !item.vendor_id
       );
@@ -885,14 +868,6 @@ export default function CheckoutScreen() {
           'One or more cart items are missing vendor information. Please remove those items and add them again.'
         );
 
-        return;
-      }
-
-      if (paymentMethod === 'UPI' && !upiTransactionReference.trim()) {
-        Alert.alert(
-          'Payment Reference Required',
-          'After paying the exact amount to RivoCity, enter the UPI transaction reference so Admin can verify it.'
-        );
         return;
       }
 
@@ -1065,7 +1040,7 @@ export default function CheckoutScreen() {
             'pending',
 
           payment_method:
-            paymentMethod,
+            'COD',
 
           delivery_code:
             deliveryOtp,
@@ -1271,25 +1246,10 @@ export default function CheckoutScreen() {
               ),
 
             payment_method:
-              paymentMethod,
+              'COD',
 
             payment_status:
               'pending',
-
-            gateway_name:
-              paymentMethod === 'UPI'
-                ? 'RivoCity UPI QR'
-                : null,
-
-            gateway_response:
-              paymentMethod === 'UPI'
-                ? {
-                    transaction_reference:
-                      upiTransactionReference.trim(),
-                    verification_status:
-                      'pending_admin_verification',
-                  }
-                : null,
           });
 
         if (paymentError) {
@@ -2186,54 +2146,76 @@ export default function CheckoutScreen() {
         </View>
 
         {/* PAYMENT */}
-        <View style={styles.card}>
-          <Text style={styles.sectionHeader}>Payment Method</Text>
-
-          <Pressable onPress={() => setPaymentMethod('COD')} style={styles.paymentOptionSelected}>
-            <View style={paymentMethod === 'COD' ? styles.radioFilled : styles.radioEmpty} />
-            <View style={styles.paymentTextWrapper}>
-              <Text style={styles.paymentMethodNameText}>Cash on Delivery</Text>
-              <Text style={styles.paymentMethodSubtitleText}>
-                Pay the rider at delivery. Please keep exact change if possible.
-              </Text>
-            </View>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setPaymentMethod('UPI')}
-            style={[styles.paymentOptionSelected, { marginTop: 10 }]}
+        <View
+          style={
+            styles.card
+          }
+        >
+          <Text
+            style={
+              styles.sectionHeader
+            }
           >
-            <View style={paymentMethod === 'UPI' ? styles.radioFilled : styles.radioEmpty} />
-            <View style={styles.paymentTextWrapper}>
-              <Text style={styles.paymentMethodNameText}>UPI to RivoCity</Text>
-              <Text style={styles.paymentMethodSubtitleText}>
-                Scan with Google Pay, PhonePe, Paytm or any UPI app.
-              </Text>
-            </View>
-          </Pressable>
+            Payment Method
+          </Text>
 
-          {paymentMethod === 'UPI' && (
-            <View style={styles.noticeCardContainer}>
-              <Text style={styles.noticeCardBody}>
-                Pay exactly ₹{aggregateBilling.grandTotal.toFixed(2)} to RivoCity.
-                {'\n\n'}
-                After payment, enter the UPI transaction reference. Your order stays payment-pending until Admin verifies the payment.
+          <View
+            style={
+              styles.paymentOptionSelected
+            }
+          >
+            <View
+              style={
+                styles.radioFilled
+              }
+            />
+
+            <View
+              style={
+                styles.paymentTextWrapper
+              }
+            >
+              <Text
+                style={
+                  styles.paymentMethodNameText
+                }
+              >
+                Cash on Delivery
               </Text>
-              <Image
-                source={require('../../assets/images/upi-qr.png')}
-                style={{ width: 220, height: 220, alignSelf: 'center', marginVertical: 12 }}
-                resizeMode="contain"
-              />
-              <TextInput
-                value={upiTransactionReference}
-                onChangeText={setUpiTransactionReference}
-                placeholder="UPI transaction reference"
-                placeholderTextColor="#94A3B8"
-                style={styles.input}
-                autoCapitalize="characters"
-              />
+
+              <Text
+                style={
+                  styles.paymentMethodSubtitleText
+                }
+              >
+                Pay cash to the rider when
+                your order is delivered.
+              </Text>
             </View>
-          )}
+          </View>
+
+          <View
+            style={
+              styles.noticeCardContainer
+            }
+          >
+            <Text
+              style={
+                styles.noticeCardBody
+              }
+            >
+              We're currently working on
+              bringing online payments to
+              RivoCity.
+              {'\n\n'}
+              For now, you can safely place
+              your order using Cash on
+              Delivery.
+              {'\n\n'}
+              Thank you for understanding
+              and for using RivoCity.
+            </Text>
+          </View>
         </View>
       </ScrollView>
 
@@ -3029,16 +3011,6 @@ const styles = StyleSheet.create({
     borderColor: '#22CC71',
     borderRadius: 14,
     padding: 16,
-  },
-
-  radioEmpty: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: '#CBD5E1',
-    marginRight: 12,
-    backgroundColor: '#FFFFFF',
   },
 
   radioFilled: {
