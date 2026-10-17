@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -116,11 +118,17 @@ export default function FeedbackScreen() {
           <ActivityIndicator color="#16A34A" />
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+        <KeyboardAvoidingView
+          style={styles.keyboardContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
         >
+          <ScrollView
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            showsVerticalScrollIndicator={false}
+          >
           <View style={styles.hero}>
             <View style={styles.heroIcon}>
               <Ionicons name="star-outline" size={24} color="#16A34A" />
@@ -193,7 +201,8 @@ export default function FeedbackScreen() {
               <Text style={styles.submitText}>{submitting ? 'Sending...' : 'Send Feedback'}</Text>
             </Pressable>
           </View>
-        </ScrollView>
+          </ScrollView>
+        </KeyboardAvoidingView>
       )}
     </SafeAreaView>
   );
@@ -222,6 +231,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 17, fontWeight: '800', color: '#0D0D0D' },
   headerSpacer: { width: 38 },
+  keyboardContainer: { flex: 1 },
   content: { padding: 16, paddingBottom: 48 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   hero: {
