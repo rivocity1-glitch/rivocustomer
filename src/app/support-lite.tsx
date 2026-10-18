@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -169,10 +171,17 @@ export default function SupportLiteScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
+      <KeyboardAvoidingView
+        style={styles.keyboardContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => {
@@ -357,7 +366,8 @@ export default function SupportLiteScreen() {
             </View>
           ))
         )}
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -394,6 +404,7 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 38,
   },
+  keyboardContainer: { flex: 1 },
   content: {
     padding: 16,
     paddingBottom: 48,

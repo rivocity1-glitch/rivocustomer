@@ -393,6 +393,7 @@ export default function CartScreen() {
     itemsTotal,
     deliveryFee,
     platformFee,
+    handlingFee,
     grandTotal,
   } = billingBreakdown;
 
@@ -804,7 +805,7 @@ export default function CartScreen() {
                   </Text>
                 </View>
 
-                {/* PLATFORM HANDLING FEE */}
+                {/* PLATFORM FEE */}
                 <View style={styles.billRow}>
                   <View
                     style={
@@ -820,13 +821,22 @@ export default function CartScreen() {
                     <Text
                       style={styles.billLabel}
                     >
-                      Platform Handling Fee
+                      Platform Fee
                     </Text>
                   </View>
 
                   <Text style={styles.billValue}>
                     ₹{platformFee}
                   </Text>
+                </View>
+
+                {/* ITEM-QUANTITY-BASED HANDLING FEE */}
+                <View style={styles.billRow}>
+                  <View style={styles.labelRowWithIcon}>
+                    <Text style={styles.rowLeadIcon}>📦</Text>
+                    <Text style={styles.billLabel}>Handling Fee</Text>
+                  </View>
+                  <Text style={styles.billValue}>₹{handlingFee}</Text>
                 </View>
 
                 <View

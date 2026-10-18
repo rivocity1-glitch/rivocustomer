@@ -1,78 +1,86 @@
 import { useEffect, useRef } from "react";
-import {
-    Animated,
-    Dimensions,
-    Image,
-    StyleSheet,
-    Text,
-    View,
-} from "react-native";
-
-const { width } = Dimensions.get("window");
+import { Animated, StyleSheet, Text, View } from "react-native";
 
 interface Props {
   onFinish: () => void;
 }
 
 export default function AnimatedSplash({ onFinish }: Props) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const scale = useRef(new Animated.Value(0.8)).current;
-  const translateY = useRef(new Animated.Value(25)).current;
+  const brandOpacity = useRef(new Animated.Value(0)).current;
+  const brandScale = useRef(new Animated.Value(0.94)).current;
+  const brandY = useRef(new Animated.Value(14)).current;
+  const taglineOpacity = useRef(new Animated.Value(0)).current;
+  const taglineY = useRef(new Animated.Value(8)).current;
 
   useEffect(() => {
-    Animated.sequence([
+    const animation = Animated.sequence([
       Animated.parallel([
-        Animated.timing(opacity, {
+        Animated.timing(brandOpacity, {
           toValue: 1,
-          duration: 700,
+          duration: 650,
           useNativeDriver: true,
         }),
-        Animated.spring(scale, {
+        Animated.spring(brandScale, {
           toValue: 1,
-          friction: 6,
-          tension: 60,
+          friction: 7,
+          tension: 65,
           useNativeDriver: true,
         }),
-        Animated.timing(translateY, {
+        Animated.timing(brandY, {
           toValue: 0,
-          duration: 700,
+          duration: 650,
           useNativeDriver: true,
         }),
       ]),
-      Animated.delay(900),
-      Animated.timing(opacity, {
+      Animated.parallel([
+        Animated.timing(taglineOpacity, {
+          toValue: 1,
+          duration: 450,
+          useNativeDriver: true,
+        }),
+        Animated.timing(taglineY, {
+          toValue: 0,
+          duration: 450,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.delay(1100),
+      Animated.timing(brandOpacity, {
         toValue: 0,
-        duration: 500,
+        duration: 300,
         useNativeDriver: true,
       }),
-    ]).start(() => {
-      onFinish();
+    ]);
+
+    animation.start(({ finished }) => {
+      if (finished) onFinish();
     });
-  }, []);
+
+    return () => animation.stop();
+  }, [brandOpacity, brandScale, brandY, taglineOpacity, taglineY, onFinish]);
 
   return (
     <View style={styles.container}>
       <Animated.View
-        style={{
-          opacity,
-          transform: [{ scale }, { translateY }],
-          alignItems: "center",
-        }}
+        style={[
+          styles.brandBlock,
+          {
+            opacity: brandOpacity,
+            transform: [{ scale: brandScale }, { translateY: brandY }],
+          },
+        ]}
       >
-        <Image
-          source={require("../../assets/images/splash-icon.png")}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-
-        <Text style={styles.title}>Rivo</Text>
-
-        <Text style={styles.tagline}>
-          One City.
-          {"\n"}
-          Infinite Possibilities.
-        </Text>
+        <Text style={styles.title}>RivoCity</Text>
       </Animated.View>
+
+      <Animated.Text
+        style={[
+          styles.tagline,
+          { opacity: taglineOpacity, transform: [{ translateY: taglineY }] },
+        ]}
+      >
+        One City. Infinite Possibilities.
+      </Animated.Text>
     </View>
   );
 }
@@ -83,25 +91,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#16A34A",
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 24,
   },
-
-  logo: {
-    width: width * 0.34,
-    height: width * 0.34,
-    marginBottom: 24,
+  brandBlock: {
+    alignItems: "center",
   },
-
   title: {
     color: "#FFFFFF",
-    fontSize: 34,
+    fontSize: 38,
     fontWeight: "800",
-    marginBottom: 10,
+    letterSpacing: 0.4,
   },
-
   tagline: {
+    marginTop: 12,
     color: "rgba(255,255,255,0.92)",
-    fontSize: 16,
+    fontSize: 14,
+    fontWeight: "500",
+    letterSpacing: 0.3,
     textAlign: "center",
-    lineHeight: 24,
   },
 });
