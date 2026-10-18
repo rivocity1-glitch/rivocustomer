@@ -219,12 +219,14 @@ export default function CheckoutScreen() {
   const aggregateBilling = useMemo(() => {
     let itemsTotal = 0;
     let deliveryFee = 0;
+    let totalHandlingFee = 0;
     let totalPlatformFee = 0;
     let grandTotal = 0;
 
     vendorOrderGroups.forEach(group => {
       itemsTotal += Number(group.billing.itemsTotal || 0);
       deliveryFee += Number(group.billing.deliveryFee || 0);
+      totalHandlingFee += Number(group.billing.handlingFee || 0);
       totalPlatformFee += Number(group.billing.platformFee || 0);
       grandTotal += Number(group.billing.grandTotal || 0);
     });
@@ -232,6 +234,7 @@ export default function CheckoutScreen() {
     return {
       itemsTotal,
       deliveryFee,
+      handlingFee: totalHandlingFee,
       platformFee: totalPlatformFee,
       grandTotal,
     };
@@ -1022,6 +1025,9 @@ export default function CheckoutScreen() {
             Number(
               group.billing.deliveryFee || 0
             ),
+
+          handling_fee:
+            Number(group.billing.handlingFee || 0),
 
           platform_fee:
             Number(
@@ -2082,6 +2088,29 @@ export default function CheckoutScreen() {
               {aggregateBilling.deliveryFee.toFixed(
                 2
               )}
+            </Text>
+          </View>
+
+          <View
+            style={
+              styles.breakdownRow
+            }
+          >
+            <Text
+              style={
+                styles.breakdownLabel
+              }
+            >
+              Handling Fee
+            </Text>
+
+            <Text
+              style={
+                styles.breakdownValue
+              }
+            >
+              ₹
+              {aggregateBilling.handlingFee.toFixed(2)}
             </Text>
           </View>
 
