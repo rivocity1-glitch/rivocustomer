@@ -9,12 +9,50 @@ export interface DeliveryConfig {
   max_auto_distance: number;
 }
 
+export interface HandlingFeeRule {
+  min_units: number;
+  max_units: number | null;
+  fee: number;
+}
+
+export interface HandlingFeeConfig {
+  enabled: boolean;
+  rules: HandlingFeeRule[];
+}
+
+export const DEFAULT_HANDLING_FEE_CONFIG: HandlingFeeConfig = {
+  enabled: true,
+  rules: [
+    { min_units: 1, max_units: 1, fee: 2 },
+    { min_units: 2, max_units: 3, fee: 4 },
+    { min_units: 4, max_units: 6, fee: 6 },
+    { min_units: 7, max_units: 10, fee: 8 },
+    { min_units: 11, max_units: null, fee: 10 },
+  ],
+};
+
+export function calculateHandlingFee(
+  itemCount: number,
+  config: HandlingFeeConfig = DEFAULT_HANDLING_FEE_CONFIG
+): number {
+  if (!config.enabled || itemCount <= 0) return 0;
+  const rule = config.rules.find(
+    candidate =>
+      itemCount >= candidate.min_units &&
+      (candidate.max_units === null || itemCount <= candidate.max_units)
+  );
+  return rule && Number.isFinite(Number(rule.fee)) && Number(rule.fee) >= 0
+    ? Number(rule.fee)
+    : 0;
+}
+
 export interface BillingInput {
   cartItems: { price: number; quantity: number }[];
   distanceKm: number | null;
   platformFee: number;
   commissionPercent: number;
   deliveryConfig: DeliveryConfig | null;
+  handlingFeeConfig?: HandlingFeeConfig | null;
 }
 
 export interface BillingBreakdown {
@@ -48,7 +86,10 @@ export function calculateBilling(input: BillingInput): BillingBreakdown {
   const itemsTotal = safeCartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const itemCount = safeCartItems.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item.quantity) || 0)), 0);
   // Handling fee is charged per vendor order, based on total units (not distinct SKUs).
-  const handlingFee = itemCount <= 0 ? 0 : itemCount === 1 ? 2 : itemCount <= 3 ? 4 : itemCount <= 6 ? 6 : itemCount <= 10 ? 8 : 10;
+  const handlingFee = calculateHandlingFee(
+    itemCount,
+    input.handlingFeeConfig ?? DEFAULT_HANDLING_FEE_CONFIG
+  );
   
   const actualDistanceKm = distanceKm ?? 0;
   
