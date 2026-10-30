@@ -16,7 +16,12 @@ import {
 
 import { cart, CartItem, clearCart } from '../lib/cart';
 import { supabase } from '../lib/supabase';
-import { calculateBilling, DeliveryConfig } from '../utils/billing';
+import {
+  calculateBilling,
+  DeliveryConfig,
+  HandlingFeeConfig,
+  DEFAULT_HANDLING_FEE_CONFIG,
+} from '../utils/billing';
 import { calculateDistance } from '../utils/distance';
 
 interface SavedAddress {
@@ -89,6 +94,8 @@ export default function CheckoutScreen() {
   const [platformFee, setPlatformFee] = useState(0);
   const [deliveryConfig, setDeliveryConfig] =
     useState<DeliveryConfig | null>(null);
+  const [handlingFeeConfig, setHandlingFeeConfig] =
+    useState<HandlingFeeConfig>(DEFAULT_HANDLING_FEE_CONFIG);
 
   const [vendorDataMap, setVendorDataMap] = useState<
     Record<string, VendorData>
@@ -186,6 +193,7 @@ export default function CheckoutScreen() {
         platformFee,
         commissionPercent,
         deliveryConfig,
+        handlingFeeConfig,
       });
 
       const subtotal = items.reduce(
@@ -211,6 +219,7 @@ export default function CheckoutScreen() {
     address,
     platformFee,
     deliveryConfig,
+    handlingFeeConfig,
   ]);
 
   /*
@@ -343,6 +352,54 @@ export default function CheckoutScreen() {
 
           setDeliveryConfig(null);
         }
+      }
+
+      /*
+       * HANDLING FEE CONFIGURATION
+       */
+      const {
+        data: handlingSettings,
+        error: handlingSettingsError,
+      } = await supabase
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'handling_fee_config')
+        .maybeSingle();
+
+      if (handlingSettingsError) {
+        console.error('Error loading handling fee configuration:', handlingSettingsError);
+        setHandlingFeeConfig(DEFAULT_HANDLING_FEE_CONFIG);
+      } else if (handlingSettings?.setting_value != null) {
+        try {
+          const parsedHandling = typeof handlingSettings.setting_value === 'string'
+            ? JSON.parse(handlingSettings.setting_value)
+            : handlingSettings.setting_value;
+          const candidate = parsedHandling as HandlingFeeConfig;
+          const validRules = Array.isArray(candidate?.rules) && candidate.rules.length > 0 && candidate.rules.every(rule =>
+            Number.isInteger(Number(rule.min_units)) &&
+            Number(rule.min_units) >= 1 &&
+            (rule.max_units === null || (Number.isInteger(Number(rule.max_units)) && Number(rule.max_units) >= Number(rule.min_units))) &&
+            Number.isFinite(Number(rule.fee)) &&
+            Number(rule.fee) >= 0
+          );
+          setHandlingFeeConfig(
+            validRules
+              ? {
+                  enabled: candidate.enabled !== false,
+                  rules: candidate.rules.map(rule => ({
+                    min_units: Number(rule.min_units),
+                    max_units: rule.max_units === null ? null : Number(rule.max_units),
+                    fee: Number(rule.fee),
+                  })),
+                }
+              : DEFAULT_HANDLING_FEE_CONFIG
+          );
+        } catch (error) {
+          console.error('Error parsing handling fee configuration:', error);
+          setHandlingFeeConfig(DEFAULT_HANDLING_FEE_CONFIG);
+        }
+      } else {
+        setHandlingFeeConfig(DEFAULT_HANDLING_FEE_CONFIG);
       }
 
       /*
