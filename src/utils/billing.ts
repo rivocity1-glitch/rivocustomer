@@ -19,6 +19,7 @@ export interface BillingInput {
 
 export interface BillingBreakdown {
   itemsTotal: number;
+  handlingFee: number;
   deliveryFee: number;
   platformFee: number;
   vendorCommission: number;
@@ -45,6 +46,9 @@ export function calculateBilling(input: BillingInput): BillingBreakdown {
 
   const safeCartItems = cartItems || [];
   const itemsTotal = safeCartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const itemCount = safeCartItems.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item.quantity) || 0)), 0);
+  // Handling fee is charged per vendor order, based on total units (not distinct SKUs).
+  const handlingFee = itemCount <= 0 ? 0 : itemCount === 1 ? 2 : itemCount <= 3 ? 4 : itemCount <= 6 ? 6 : itemCount <= 10 ? 8 : 10;
   
   const actualDistanceKm = distanceKm ?? 0;
   
@@ -72,10 +76,11 @@ export function calculateBilling(input: BillingInput): BillingBreakdown {
   const vendorEarning = itemsTotal - vendorCommission;
 
   // Customer grand total
-  const grandTotal = itemsTotal + deliveryFee + platformFee;
+  const grandTotal = itemsTotal + deliveryFee + platformFee + handlingFee;
 
   return {
     itemsTotal,
+    handlingFee,
     deliveryFee,
     platformFee,
     vendorCommission,
