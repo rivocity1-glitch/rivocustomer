@@ -266,7 +266,6 @@ export default function InvoiceScreen() {
   const genericDiscountVal = order?.discount ? Number(order.discount) : 0;
 
   const deliveryFeeVal = order?.delivery_fee !== undefined && order?.delivery_fee !== null ? Number(order.delivery_fee) : null;
-  const handlingFeeVal = order?.handling_fee !== undefined && order?.handling_fee !== null ? Number(order.handling_fee) : null;
   const platformFeeVal = order?.platform_fee !== undefined && order?.platform_fee !== null ? Number(order.platform_fee) : null;
   const grandTotalVal = order?.total_amount !== undefined && order?.total_amount !== null ? Number(order.total_amount) : null;
 
@@ -511,14 +510,7 @@ export default function InvoiceScreen() {
                 <Text style={styles.summaryLabel}>Delivery Fee</Text>
                 <Text style={styles.summaryValue}>{formatAmount(deliveryFeeVal)}</Text>
               </View>
-            )}
-            {handlingFeeVal !== null && (
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Handling Fee</Text>
-                <Text style={styles.summaryValue}>{formatAmount(handlingFeeVal)}</Text>
-              </View>
-            )}
-            {platformFeeVal !== null && (
+            )}{platformFeeVal !== null && (
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Platform Fee</Text>
                 <Text style={styles.summaryValue}>{formatAmount(platformFeeVal)}</Text>
