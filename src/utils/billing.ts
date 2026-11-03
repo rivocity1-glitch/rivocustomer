@@ -40,14 +40,17 @@ export function calculateBilling(input: BillingInput): BillingBreakdown {
     distanceKm,
     platformFee,
     commissionPercent,
-    deliveryConfig
+    deliveryConfig,
   } = input;
 
   const safeCartItems = cartItems || [];
-  const itemsTotal = safeCartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const itemsTotal = safeCartItems.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0
+  );
   const actualDistanceKm = distanceKm ?? 0;
-  
-  // Extract configurations safely, fallback to 0 if not yet loaded to prevent errors
+
+  // Extract configurations safely. Fall back to 0 if not yet loaded.
   const baseCustomerFee = deliveryConfig?.base_customer_fee ?? 0;
   const customerIncrement = deliveryConfig?.customer_increment ?? 0;
   const baseRiderEarning = deliveryConfig?.base_rider_earning ?? 0;
@@ -55,22 +58,30 @@ export function calculateBilling(input: BillingInput): BillingBreakdown {
   const baseDistance = deliveryConfig?.base_distance ?? 0;
   const maxAutoDistance = deliveryConfig?.max_auto_distance ?? 0;
 
-  // Calculate chargeable distance bound between base_distance and max_auto_distance
+  // Bound chargeable distance between base_distance and max_auto_distance.
   const chargeableDistanceKm = Math.max(
     baseDistance,
     Math.min(Math.ceil(actualDistanceKm), maxAutoDistance)
   );
 
-  // Dynamic pricing formulas using injected configuration
-  const deliveryFee = distanceKm === null ? 0 : baseCustomerFee + (chargeableDistanceKm - baseDistance) * customerIncrement;
-  const riderEarning = distanceKm === null ? 0 : baseRiderEarning + (chargeableDistanceKm - baseDistance) * riderIncrement;
+  // Dynamic pricing formulas using injected configuration.
+  const deliveryFee =
+    distanceKm === null
+      ? 0
+      : baseCustomerFee +
+        (chargeableDistanceKm - baseDistance) * customerIncrement;
+  const riderEarning =
+    distanceKm === null
+      ? 0
+      : baseRiderEarning +
+        (chargeableDistanceKm - baseDistance) * riderIncrement;
   const rivoDeliveryMargin = deliveryFee - riderEarning;
-  
-  // Vendor fee splits using strict percentage configuration inputs
+
+  // Vendor fee splits.
   const vendorCommission = (itemsTotal * commissionPercent) / 100;
   const vendorEarning = itemsTotal - vendorCommission;
 
-  // Customer grand total
+  // Customer total: handling fee has been removed.
   const grandTotal = itemsTotal + deliveryFee + platformFee;
 
   return {
