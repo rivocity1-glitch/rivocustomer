@@ -36,7 +36,6 @@ interface OrderDetails {
   customer_id: string;
   subtotal: number;
   delivery_fee: number;
-  handling_fee: number;
   platform_fee: number;
   total_amount: number;
   payment_status: string;
@@ -140,7 +139,6 @@ export default function OrderTrackingScreen() {
           customer_id,
           subtotal,
           delivery_fee,
-          handling_fee,
           platform_fee,
           total_amount,
           payment_status,
