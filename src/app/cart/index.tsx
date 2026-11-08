@@ -628,13 +628,13 @@ export default function CartScreen() {
                     >
                       ×
                     </Text>{' '}
-                    {item.quantity}
+                    {item.quantity}{item.allow_loose_quantity ? ` ${item.quantity_unit || ''}` : ''}
                   </Text>
 
                   <Text
                     style={styles.itemTotalPrice}
                   >
-                    ₹{item.price * item.quantity}
+                    ₹{item.price * (item.allow_loose_quantity ? item.quantity * (['gm', 'ml'].includes(String(item.quantity_unit || '').toLowerCase()) ? 0.001 : 1) : item.quantity)}
                   </Text>
                 </View>
 
@@ -690,7 +690,7 @@ export default function CartScreen() {
                     <Text
                       style={styles.quantityText}
                     >
-                      {item.quantity}
+                      {item.quantity}{item.allow_loose_quantity ? ` ${item.quantity_unit || ''}` : ''}
                     </Text>
 
                     <Pressable
