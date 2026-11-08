@@ -131,7 +131,12 @@ export function addToCart(product: any) {
   const existingItem = cart.find((item) => String(item.id) === String(product.id));
 
   if (existingItem) {
-    existingItem.quantity += 1;
+    const nextQuantity = product.cart_quantity != null ? Number(product.cart_quantity) : existingItem.quantity + 1;
+    existingItem.quantity = nextQuantity;
+    if (product.cart_quantity != null) {
+      existingItem.loose_quantity = nextQuantity;
+      existingItem.quantity_unit = product.quantity_unit || existingItem.quantity_unit || null;
+    }
   } else {
     cart.push({
       id: String(product.id),
