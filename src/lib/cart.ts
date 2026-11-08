@@ -12,6 +12,8 @@ export interface CartItem {
   category_id?: string | null;
   description?: string | null;
   quantity: number;
+  quantity_unit?: string | null;
+  loose_quantity?: number | null;
   gst_rate?: number | null;
   gst_slab?: string | null;
   is_exclusive?: boolean;
@@ -141,7 +143,9 @@ export function addToCart(product: any) {
       stock: product.stock != null ? Number(product.stock) : null,
       category_id: product.category_id || null,
       description: product.description || null,
-      quantity: 1,
+      quantity: product.cart_quantity != null ? Number(product.cart_quantity) : 1,
+      loose_quantity: product.cart_quantity != null ? Number(product.cart_quantity) : null,
+      quantity_unit: product.quantity_unit || null,
       gst_rate: product.gst_rate != null ? Number(product.gst_rate) : 0,
       gst_slab: product.gst_slab || null,
       is_exclusive: product.is_exclusive === true,
