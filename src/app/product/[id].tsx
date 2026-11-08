@@ -23,6 +23,8 @@ export default function ProductScreen() {
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
   const [isInCart, setIsInCart] = useState<boolean>(false);
   const [imageIndex, setImageIndex] = useState(0);
+  const [looseQuantity, setLooseQuantity] = useState<number>(1);
+  const [quantityError, setQuantityError] = useState('');
 
   useEffect(() => {
     loadProduct();
@@ -74,8 +76,13 @@ export default function ProductScreen() {
   const looseMin = Number(product.loose_min_quantity || 0);
   const looseMax = Number(product.loose_max_quantity || 0);
   const looseStep = Number(product.loose_step_quantity || 1);
-  const [looseQuantity, setLooseQuantity] = useState<number>(looseMin || 1);
-  const [quantityError, setQuantityError] = useState('');
+  useEffect(() => {
+    if (product?.allow_loose_quantity === true) {
+      const minimum = Number(product.loose_min_quantity || 1);
+      setLooseQuantity(minimum);
+      setQuantityError('');
+    }
+  }, [product?.id, product?.allow_loose_quantity, product?.loose_min_quantity]);
 
   const addProductToCart = () => {
     if (product.allow_loose_quantity === true) {
