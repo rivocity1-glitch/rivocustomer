@@ -582,7 +582,13 @@ export default function CartScreen() {
                 {item.image_url ? (
                   <Image
                     source={{
-                      uri: item.image_url,
+                      uri: (() => {
+                        if (typeof item.image_url !== 'string') return item.image_url as any;
+                        try {
+                          const parsed = JSON.parse(item.image_url);
+                          return Array.isArray(parsed) ? (parsed[0] || item.image_url) : item.image_url;
+                        } catch { return item.image_url; }
+                      })(),
                     }}
                     style={
                       styles.productThumbnailImage
