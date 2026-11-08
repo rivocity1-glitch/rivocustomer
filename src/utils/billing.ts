@@ -10,7 +10,7 @@ export interface DeliveryConfig {
 }
 
 export interface BillingInput {
-  cartItems: { price: number; quantity: number }[];
+  cartItems: { price: number; quantity: number; quantity_unit?: string | null; allow_loose_quantity?: boolean }[];
   distanceKm: number | null;
   platformFee: number;
   commissionPercent: number;
@@ -44,10 +44,12 @@ export function calculateBilling(input: BillingInput): BillingBreakdown {
   } = input;
 
   const safeCartItems = cartItems || [];
-  const itemsTotal = safeCartItems.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0
-  );
+  const itemsTotal = safeCartItems.reduce((sum, item) => {
+    const unit = String(item.quantity_unit || '').toLowerCase();
+    const conversion = unit === 'gm' || unit === 'ml' ? 0.001 : 1;
+    const quantityMultiplier = item.allow_loose_quantity ? item.quantity * conversion : item.quantity;
+    return sum + item.price * quantityMultiplier;
+  }, 0);
   const actualDistanceKm = distanceKm ?? 0;
 
   // Extract configurations safely. Fall back to 0 if not yet loaded.
