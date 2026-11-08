@@ -1097,6 +1097,11 @@ function StaggeredProductCard({
       return;
     }
 
+    if (item.allow_loose_quantity === true) {
+      router.push({ pathname: '/product/[id]', params: { id: item.id } } as any);
+      return;
+    }
+
     if (alreadyInCart) {
       router.push('/cart');
     } else {
