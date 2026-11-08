@@ -1,6 +1,15 @@
 -- RivoCity expanded top-level product categories.
--- Existing UUIDs and product category_id relationships are preserved.
--- New categories are inserted only when the same name does not already exist.
+-- Rename matching legacy rows rather than replacing their UUIDs. Product references stay intact.
+UPDATE public.product_categories
+SET name = 'Grocery & Supermarket', updated_at = now()
+WHERE lower(trim(name)) = 'grocery'
+  AND NOT EXISTS (SELECT 1 FROM public.product_categories x WHERE lower(trim(x.name)) = 'grocery & supermarket');
+
+UPDATE public.product_categories
+SET name = 'Pet Supplies', updated_at = now()
+WHERE lower(trim(name)) = 'pet food'
+  AND NOT EXISTS (SELECT 1 FROM public.product_categories x WHERE lower(trim(x.name)) = 'pet supplies');
+
 WITH proposed(name, display_order, requires_drug_license) AS (
   VALUES
     ('Grocery & Supermarket', 1, false),
@@ -36,7 +45,6 @@ WHERE NOT EXISTS (
   WHERE lower(trim(existing.name)) = lower(trim(p.name))
 );
 
--- Activate new categories and normalize display order only for the proposed set.
 WITH proposed(name, display_order, requires_drug_license) AS (
   VALUES
     ('Grocery & Supermarket', 1, false),
