@@ -188,12 +188,12 @@ export default function CheckoutScreen() {
         deliveryConfig,
       });
 
-      const subtotal = items.reduce(
-        (sum, item) =>
-          sum +
-          Number(item.price || 0) * Number(item.quantity || 0),
-        0
-      );
+      const subtotal = items.reduce((sum, item) => {
+        const unit = String(item.quantity_unit || '').toLowerCase();
+        const conversion = unit === 'gm' || unit === 'ml' ? 0.001 : 1;
+        const quantityMultiplier = item.allow_loose_quantity ? Number(item.quantity || 0) * conversion : Number(item.quantity || 0);
+        return sum + Number(item.price || 0) * quantityMultiplier;
+      }, 0);
 
       result.push({
         vendorId,
@@ -1120,18 +1120,13 @@ export default function CheckoutScreen() {
                 item.price || 0
               );
 
-            const itemQuantity =
-              Number(
-                item.quantity || 0
-              );
-
-            const itemTotal =
-              Number(
-                (
-                  itemPrice *
-                  itemQuantity
-                ).toFixed(2)
-              );
+            const measuredQuantity = Number(item.quantity || 0);
+            const unit = String(item.quantity_unit || '').toLowerCase();
+            const conversion = unit === 'gm' || unit === 'ml' ? 0.001 : 1;
+            const itemQuantity = item.allow_loose_quantity ? 1 : measuredQuantity;
+            const itemTotal = Number((
+              itemPrice * (item.allow_loose_quantity ? measuredQuantity * conversion : measuredQuantity)
+            ).toFixed(2));
 
             const gstRate =
               Number(
@@ -1182,6 +1177,12 @@ export default function CheckoutScreen() {
 
               quantity:
                 itemQuantity,
+
+              loose_quantity:
+                item.allow_loose_quantity ? measuredQuantity : null,
+
+              quantity_unit:
+                item.allow_loose_quantity ? item.quantity_unit : null,
 
               unit_price:
                 itemPrice,
