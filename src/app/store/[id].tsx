@@ -67,6 +67,12 @@ interface Product {
   category_id?: string | null;
   status?: string | null;
   stock?: number | null;
+  is_exclusive?: boolean | null;
+  allow_loose_quantity?: boolean | null;
+  loose_min_quantity?: number | null;
+  loose_max_quantity?: number | null;
+  loose_step_quantity?: number | null;
+  loose_unit?: string | null;
 }
 
 interface CategoryRow {
@@ -97,6 +103,17 @@ const BANNER_HEIGHT =
   SCREEN_WIDTH / BANNER_ASPECT_RATIO;
 
 // --- HAVERSINE DISTANCE HELPER ---
+function parseProductImages(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && !!item);
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === 'string' && !!item);
+  } catch {}
+  return [value];
+}
+
 function calculateDistance(
   lat1: number,
   lon1: number,
@@ -1144,10 +1161,10 @@ function StaggeredProductCard({
             styles.imageContainer
           }
         >
-          {item.image_url ? (
+          {parseProductImages(item.image_url)[0] ? (
             <Image
               source={{
-                uri: item.image_url,
+                uri: parseProductImages(item.image_url)[0],
               }}
               style={
                 styles.productImage
@@ -1167,6 +1184,8 @@ function StaggeredProductCard({
               />
             </View>
           )}
+
+          {item.is_exclusive && <View style={[styles.discountBadge, { top: 6, right: 6, left: undefined, backgroundColor: '#0D0D0D' }]}><Text style={styles.discountText}>RIVO EXCLUSIVE</Text></View>}
 
           {showMRP &&
             discountPercent >
