@@ -157,7 +157,7 @@ export default function ProductScreen() {
               <Pressable onPress={() => { setQuantityError(''); setLooseQuantity(q => Math.min(looseMax, Number((q + looseStep).toFixed(3)))); }} style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: 22, fontWeight: '800', color: '#166534' }}>+</Text></Pressable>
             </View>
             {!!quantityError && <Text style={{ color: '#DC2626', fontSize: 11, marginTop: 8 }}>{quantityError}</Text>}
-          </View>
+          </View>}
           <Text style={styles.quantityMetricLabel}>Per Unit Pricing Weight</Text>
           <View style={styles.pricingLayoutBlock}>
             <View style={styles.priceContainerRow}><Text style={styles.currentPriceLabel}>₹{sellingPrice}</Text><Text style={styles.mrpLabel}>MRP ₹{actualMrp}</Text></View>
