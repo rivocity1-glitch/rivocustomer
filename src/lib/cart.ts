@@ -171,7 +171,14 @@ export function increaseQuantity(productId: string) {
   const item = cart.find((item) => String(item.id) === String(productId));
 
   if (item) {
-    item.quantity += 1;
+    if (item.allow_loose_quantity && item.loose_step_quantity != null && item.loose_max_quantity != null) {
+      const next = Number((item.quantity + item.loose_step_quantity).toFixed(3));
+      if (next > item.loose_max_quantity) return;
+      item.quantity = next;
+      item.loose_quantity = next;
+    } else {
+      item.quantity += 1;
+    }
     saveCartLocally();
     notifyCartChange();
   }
@@ -182,10 +189,17 @@ export function decreaseQuantity(productId: string) {
   if (itemIndex === -1) return;
 
   const item = cart[itemIndex];
-  item.quantity -= 1;
-
-  if (item.quantity <= 0) {
-    cart.splice(itemIndex, 1);
+  if (item.allow_loose_quantity && item.loose_step_quantity != null && item.loose_min_quantity != null) {
+    const next = Number((item.quantity - item.loose_step_quantity).toFixed(3));
+    if (next < item.loose_min_quantity) {
+      cart.splice(itemIndex, 1);
+    } else {
+      item.quantity = next;
+      item.loose_quantity = next;
+    }
+  } else {
+    item.quantity -= 1;
+    if (item.quantity <= 0) cart.splice(itemIndex, 1);
   }
 
   saveCartLocally();
