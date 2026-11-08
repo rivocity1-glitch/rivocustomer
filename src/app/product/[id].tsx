@@ -34,6 +34,14 @@ export default function ProductScreen() {
     if (product) checkCartStatus();
   }, [product]);
 
+  useEffect(() => {
+    if (product?.allow_loose_quantity === true) {
+      const minimum = Number(product.loose_min_quantity || 1);
+      setLooseQuantity(minimum);
+      setQuantityError('');
+    }
+  }, [product?.id, product?.allow_loose_quantity, product?.loose_min_quantity]);
+
   async function loadProduct() {
     const productId = Array.isArray(id) ? id[0] : id;
     const { data, error } = await supabase.from('products').select('*').eq('id', productId);
@@ -76,14 +84,6 @@ export default function ProductScreen() {
   const looseMin = Number(product.loose_min_quantity || 0);
   const looseMax = Number(product.loose_max_quantity || 0);
   const looseStep = Number(product.loose_step_quantity || 1);
-  useEffect(() => {
-    if (product?.allow_loose_quantity === true) {
-      const minimum = Number(product.loose_min_quantity || 1);
-      setLooseQuantity(minimum);
-      setQuantityError('');
-    }
-  }, [product?.id, product?.allow_loose_quantity, product?.loose_min_quantity]);
-
   const addProductToCart = () => {
     if (product.allow_loose_quantity === true) {
       const stepCount = Math.round((looseQuantity - looseMin) / looseStep);
