@@ -14,6 +14,12 @@ export interface CartItem {
   quantity: number;
   gst_rate?: number | null;
   gst_slab?: string | null;
+  is_exclusive?: boolean;
+  allow_loose_quantity?: boolean;
+  loose_min_quantity?: number | null;
+  loose_max_quantity?: number | null;
+  loose_step_quantity?: number | null;
+  loose_unit?: string | null;
 }
 
 export let cart: CartItem[] = [];
@@ -138,6 +144,12 @@ export function addToCart(product: any) {
       quantity: 1,
       gst_rate: product.gst_rate != null ? Number(product.gst_rate) : 0,
       gst_slab: product.gst_slab || null,
+      is_exclusive: product.is_exclusive === true,
+      allow_loose_quantity: product.allow_loose_quantity === true,
+      loose_min_quantity: product.loose_min_quantity != null ? Number(product.loose_min_quantity) : null,
+      loose_max_quantity: product.loose_max_quantity != null ? Number(product.loose_max_quantity) : null,
+      loose_step_quantity: product.loose_step_quantity != null ? Number(product.loose_step_quantity) : null,
+      loose_unit: product.loose_unit || null,
     });
   }
 
