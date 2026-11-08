@@ -109,6 +109,7 @@ export default function ProductScreen() {
 
         <View style={styles.metaMainCard}>
           <View style={styles.badgeLineRow}>
+            {product.is_exclusive === true && <View style={{ backgroundColor: '#0D0D0D', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}><Text style={{ color: '#A8E63A', fontSize: 10, fontWeight: '900' }}>RIVO EXCLUSIVE</Text></View>}
             <View style={[styles.stockStatusBadgeContainer, { backgroundColor: product.stock === 0 ? '#EF444415' : product.stock <= 5 ? '#F9731615' : '#22CC7115' }]}>
               <Text style={[styles.stockStatusBadgeText, { color: product.stock === 0 ? '#EF4444' : product.stock <= 5 ? '#F97316' : '#22CC71' }]}>
                 {product.stock === 0 ? '• Out of Stock' : product.stock <= 5 ? `• Only ${product.stock} Left` : '• In Stock'}
