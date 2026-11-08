@@ -159,8 +159,6 @@ export function addToCart(product: any) {
       loose_max_quantity: product.loose_max_quantity != null ? Number(product.loose_max_quantity) : null,
       loose_step_quantity: product.loose_step_quantity != null ? Number(product.loose_step_quantity) : null,
       loose_unit: product.loose_unit || null,
-      quantity_unit: product.quantity_unit || null,
-      loose_quantity: product.cart_quantity != null ? Number(product.cart_quantity) : null,
     });
   }
 
