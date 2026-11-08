@@ -1194,9 +1194,7 @@ function StaggeredProductCard({
             </View>
           )}
 
-          {item.is_exclusive && <View style={[styles.discountBadge, { top: 6, right: 6, left: undefined, backgroundColor: '#0D0D0D' }]}><Text style={styles.discountText}>RIVO EXCLUSIVE</Text></View>}
-
-          {item.is_exclusive && <View style={[styles.discountBadge, { top: 6, right: 6, left: undefined, backgroundColor: '#0D0D0D' }]}><Text style={styles.discountText}>RIVO EXCLUSIVE</Text></View>}
+          {item.is_exclusive === true && <View style={[styles.discountBadge, { top: 6, right: 6, left: undefined, backgroundColor: '#0D0D0D' }]}><Text style={styles.discountText}>RIVO EXCLUSIVE</Text></View>}
           {showMRP &&
             discountPercent >
               0 && (
