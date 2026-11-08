@@ -153,12 +153,12 @@ export default function ProductScreen() {
             <Text style={{ color: '#64748B', fontSize: 12, marginTop: 4 }}>Minimum {looseMin} · Maximum {looseMax} · Step {looseStep} {product.loose_unit || ''}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 }}>
               <Pressable onPress={() => { setQuantityError(''); setLooseQuantity(q => Math.max(looseMin, Number((q - looseStep).toFixed(3)))); }} style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: 22, fontWeight: '800', color: '#166534' }}>−</Text></Pressable>
-              <View style={{ flex: 1, alignItems: 'center' }}><Text style={{ fontSize: 20, fontWeight: '900', color: '#14532D' }}>{looseQuantity} {product.loose_unit || ''}</Text><Text style={{ color: '#64748B', fontSize: 11 }}>₹{(sellingPrice * looseQuantity).toFixed(2)} estimated</Text></View>
+              <View style={{ flex: 1, alignItems: 'center' }}><Text style={{ fontSize: 20, fontWeight: '900', color: '#14532D' }}>{looseQuantity} {product.loose_unit || ''}</Text><Text style={{ color: '#64748B', fontSize: 11 }}>₹{(sellingPrice * looseQuantity * (['gm', 'ml'].includes(String(product.loose_unit || '').toLowerCase()) ? 0.001 : 1)).toFixed(2)} estimated</Text></View>
               <Pressable onPress={() => { setQuantityError(''); setLooseQuantity(q => Math.min(looseMax, Number((q + looseStep).toFixed(3)))); }} style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: 22, fontWeight: '800', color: '#166534' }}>+</Text></Pressable>
             </View>
             {!!quantityError && <Text style={{ color: '#DC2626', fontSize: 11, marginTop: 8 }}>{quantityError}</Text>}
           </View>}
-          <Text style={styles.quantityMetricLabel}>Per Unit Pricing Weight</Text>
+          <Text style={styles.quantityMetricLabel}>Pack size / selling unit: {product.weight || "Per item"}</Text>
           <View style={styles.pricingLayoutBlock}>
             <View style={styles.priceContainerRow}><Text style={styles.currentPriceLabel}>₹{sellingPrice}</Text><Text style={styles.mrpLabel}>MRP ₹{actualMrp}</Text></View>
             <View style={styles.savingsBoxTag}><Text style={styles.savingsBoxText}>{totalSavings > 0 ? `Save ₹${totalSavings}` : 'Best Price'}</Text></View>
