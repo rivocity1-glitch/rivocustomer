@@ -79,7 +79,9 @@ export default function ProductScreen() {
 
   const addProductToCart = () => {
     if (product.allow_loose_quantity === true) {
-      if (!Number.isFinite(looseQuantity) || looseQuantity < looseMin || looseQuantity > looseMax || Math.abs((looseQuantity - looseMin) % looseStep) > 0.000001) {
+      const stepCount = Math.round((looseQuantity - looseMin) / looseStep);
+      const alignedQuantity = looseMin + stepCount * looseStep;
+      if (!Number.isFinite(looseQuantity) || looseQuantity < looseMin || looseQuantity > looseMax || Math.abs(alignedQuantity - looseQuantity) > 0.000001) {
         setQuantityError(`Choose between ${looseMin} and ${looseMax} ${product.loose_unit || ''} in steps of ${looseStep}.`);
         return;
       }
