@@ -67,6 +67,10 @@ interface Product {
   category_id?: string | null;
   status?: string | null;
   stock?: number | null;
+  vendor_id?: string;
+  weight?: string | null;
+  gst_rate?: number | null;
+  gst_slab?: string | null;
   is_exclusive?: boolean | null;
   allow_loose_quantity?: boolean | null;
   loose_min_quantity?: number | null;
