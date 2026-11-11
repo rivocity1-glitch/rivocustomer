@@ -23,6 +23,8 @@ export default function ProductScreen() {
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
   const [isInCart, setIsInCart] = useState<boolean>(false);
   const [imageIndex, setImageIndex] = useState(0);
+  const [looseQuantity, setLooseQuantity] = useState<number>(1);
+  const [quantityError, setQuantityError] = useState('');
 
   useEffect(() => {
     loadProduct();
@@ -31,6 +33,14 @@ export default function ProductScreen() {
   useEffect(() => {
     if (product) checkCartStatus();
   }, [product]);
+
+  useEffect(() => {
+    if (product?.allow_loose_quantity === true) {
+      const minimum = Number(product.loose_min_quantity || 1);
+      setLooseQuantity(minimum);
+      setQuantityError('');
+    }
+  }, [product?.id, product?.allow_loose_quantity, product?.loose_min_quantity]);
 
   async function loadProduct() {
     const productId = Array.isArray(id) ? id[0] : id;
@@ -71,6 +81,25 @@ export default function ProductScreen() {
     ? Math.ceil((new Date(product.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : null;
   const images = parseProductImages(product.image_url);
+  const looseMin = Number(product.loose_min_quantity || 0);
+  const looseMax = Number(product.loose_max_quantity || 0);
+  const looseStep = Number(product.loose_step_quantity || 1);
+  const addProductToCart = () => {
+    if (product.allow_loose_quantity === true) {
+      const stepCount = Math.round((looseQuantity - looseMin) / looseStep);
+      const alignedQuantity = looseMin + stepCount * looseStep;
+      if (!Number.isFinite(looseQuantity) || looseQuantity < looseMin || looseQuantity > looseMax || Math.abs(alignedQuantity - looseQuantity) > 0.000001) {
+        setQuantityError(`Choose between ${looseMin} and ${looseMax} ${product.loose_unit || ''} in steps of ${looseStep}.`);
+        return;
+      }
+      const added = addToCart({ ...product, cart_quantity: looseQuantity, quantity_unit: product.loose_unit || product.weight || '' });
+      if (!added) return;
+      router.replace('/cart');
+      return;
+    }
+    if (!isInCart) addToCart(product);
+    router.replace('/cart');
+  };
 
   return (
     <View style={styles.container}>
@@ -109,6 +138,7 @@ export default function ProductScreen() {
 
         <View style={styles.metaMainCard}>
           <View style={styles.badgeLineRow}>
+            {product.is_exclusive === true && <View style={{ backgroundColor: '#0D0D0D', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}><Text style={{ color: '#A8E63A', fontSize: 10, fontWeight: '900' }}>RIVO EXCLUSIVE</Text></View>}
             <View style={[styles.stockStatusBadgeContainer, { backgroundColor: product.stock === 0 ? '#EF444415' : product.stock <= 5 ? '#F9731615' : '#22CC7115' }]}>
               <Text style={[styles.stockStatusBadgeText, { color: product.stock === 0 ? '#EF4444' : product.stock <= 5 ? '#F97316' : '#22CC71' }]}>
                 {product.stock === 0 ? '• Out of Stock' : product.stock <= 5 ? `• Only ${product.stock} Left` : '• In Stock'}
@@ -117,7 +147,18 @@ export default function ProductScreen() {
             <View style={styles.deliverySpeedBadge}><Text style={styles.deliverySpeedText}>⚡ 10 MINS</Text></View>
           </View>
           <Text style={styles.productTitleText}>{product.name}</Text>
-          <Text style={styles.quantityMetricLabel}>Per Unit Pricing Weight</Text>
+          {product.is_exclusive === true && <View style={{ alignSelf: 'flex-start', marginTop: 10, backgroundColor: '#0D0D0D', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}><Text style={{ color: '#A8E63A', fontSize: 11, fontWeight: '900' }}>RIVO EXCLUSIVE</Text></View>}
+          {product.allow_loose_quantity === true && <View style={{ marginTop: 16, padding: 14, borderRadius: 14, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0' }}>
+            <Text style={{ color: '#166534', fontWeight: '800', fontSize: 14 }}>Order loose quantity</Text>
+            <Text style={{ color: '#64748B', fontSize: 12, marginTop: 4 }}>Minimum {looseMin} · Maximum {looseMax} · Step {looseStep} {product.loose_unit || ''}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 }}>
+              <Pressable onPress={() => { setQuantityError(''); setLooseQuantity(q => Math.max(looseMin, Number((q - looseStep).toFixed(3)))); }} style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: 22, fontWeight: '800', color: '#166534' }}>−</Text></Pressable>
+              <View style={{ flex: 1, alignItems: 'center' }}><Text style={{ fontSize: 20, fontWeight: '900', color: '#14532D' }}>{looseQuantity} {product.loose_unit || ''}</Text><Text style={{ color: '#64748B', fontSize: 11 }}>₹{(sellingPrice * looseQuantity * (['gm', 'ml'].includes(String(product.loose_unit || '').toLowerCase()) ? 0.001 : 1)).toFixed(2)} estimated</Text></View>
+              <Pressable onPress={() => { setQuantityError(''); setLooseQuantity(q => Math.min(looseMax, Number((q + looseStep).toFixed(3)))); }} style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: 22, fontWeight: '800', color: '#166534' }}>+</Text></Pressable>
+            </View>
+            {!!quantityError && <Text style={{ color: '#DC2626', fontSize: 11, marginTop: 8 }}>{quantityError}</Text>}
+          </View>}
+          <Text style={styles.quantityMetricLabel}>Pack size / selling unit: {product.weight || "Per item"}</Text>
           <View style={styles.pricingLayoutBlock}>
             <View style={styles.priceContainerRow}><Text style={styles.currentPriceLabel}>₹{sellingPrice}</Text><Text style={styles.mrpLabel}>MRP ₹{actualMrp}</Text></View>
             <View style={styles.savingsBoxTag}><Text style={styles.savingsBoxText}>{totalSavings > 0 ? `Save ₹${totalSavings}` : 'Best Price'}</Text></View>
@@ -141,7 +182,7 @@ export default function ProductScreen() {
         {relatedProducts.length > 0 && <View style={styles.relatedProductsWrapper}><Text style={styles.sectionHeadingText}>More from this store</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.relatedScrollContent}>{relatedProducts.map(item => <Pressable key={item.id} onPress={() => router.push(`/product/${item.id}`)} style={styles.placeholderRelatedCard}><View style={styles.placeholderMiniImage}>{parseProductImages(item.image_url)[0] ? <Image source={{ uri: parseProductImages(item.image_url)[0] }} style={styles.relatedProductMiniImage} resizeMode="contain" /> : <Text style={styles.placeholderBoxIcon}>📦</Text>}</View><Text style={styles.placeholderCardTitle} numberOfLines={1}>{item.name}</Text><Text style={styles.placeholderCardPrice}>₹{item.price}</Text></Pressable>)}</ScrollView></View>}
       </ScrollView>
 
-      <View style={styles.stickyActionFooterBar}><View style={styles.footerPricingDisplayArea}><Text style={styles.footerTotalPriceText}>₹{sellingPrice}</Text><Text style={styles.footerMutedSubtitle}>Inclusive of standard retail taxes</Text></View><Pressable disabled={product.stock === 0} onPress={() => { if (!isInCart) addToCart(product); router.replace('/cart'); }} style={[styles.primaryActionButton, product.stock === 0 ? styles.disabledStateButton : styles.activeStateButton]}><Text style={styles.primaryActionButtonTextLabel}>{product.stock === 0 ? 'Out Of Stock' : isInCart ? 'View Cart' : 'Add To Cart'}</Text></Pressable></View>
+      <View style={styles.stickyActionFooterBar}><View style={styles.footerPricingDisplayArea}><Text style={styles.footerTotalPriceText}>₹{sellingPrice}</Text><Text style={styles.footerMutedSubtitle}>Inclusive of standard retail taxes</Text></View><Pressable disabled={product.stock === 0} onPress={addProductToCart} style={[styles.primaryActionButton, product.stock === 0 ? styles.disabledStateButton : styles.activeStateButton]}><Text style={styles.primaryActionButtonTextLabel}>{product.stock === 0 ? 'Out Of Stock' : isInCart ? 'View Cart' : product.allow_loose_quantity === true ? 'Add selected quantity' : 'Add To Cart'}</Text></Pressable></View>
     </View>
   );
 }

@@ -170,7 +170,7 @@ export default function HomeScreen() {
           // 4. Fetch active products
           const { data: prodData } = await supabase
             .from('products')
-            .select('id, vendor_id, category_id, status')
+            .select('id, vendor_id, category_id, status, is_exclusive')
             .eq('status', 'active');
 
           if (isMounted && prodData) {

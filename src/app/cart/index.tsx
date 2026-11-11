@@ -582,7 +582,13 @@ export default function CartScreen() {
                 {item.image_url ? (
                   <Image
                     source={{
-                      uri: item.image_url,
+                      uri: (() => {
+                        if (typeof item.image_url !== 'string') return item.image_url as any;
+                        try {
+                          const parsed = JSON.parse(item.image_url);
+                          return Array.isArray(parsed) ? (parsed[0] || item.image_url) : item.image_url;
+                        } catch { return item.image_url; }
+                      })(),
                     }}
                     style={
                       styles.productThumbnailImage
@@ -628,13 +634,13 @@ export default function CartScreen() {
                     >
                       ×
                     </Text>{' '}
-                    {item.quantity}
+                    {item.quantity}{item.allow_loose_quantity ? ` ${item.quantity_unit || ''}` : ''}
                   </Text>
 
                   <Text
                     style={styles.itemTotalPrice}
                   >
-                    ₹{item.price * item.quantity}
+                    ₹{item.price * (item.allow_loose_quantity ? item.quantity * (['gm', 'ml'].includes(String(item.quantity_unit || '').toLowerCase()) ? 0.001 : 1) : item.quantity)}
                   </Text>
                 </View>
 
@@ -690,7 +696,7 @@ export default function CartScreen() {
                     <Text
                       style={styles.quantityText}
                     >
-                      {item.quantity}
+                      {item.quantity}{item.allow_loose_quantity ? ` ${item.quantity_unit || ''}` : ''}
                     </Text>
 
                     <Pressable

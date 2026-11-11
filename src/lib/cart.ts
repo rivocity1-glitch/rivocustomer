@@ -12,8 +12,16 @@ export interface CartItem {
   category_id?: string | null;
   description?: string | null;
   quantity: number;
+  quantity_unit?: string | null;
+  loose_quantity?: number | null;
   gst_rate?: number | null;
   gst_slab?: string | null;
+  is_exclusive?: boolean;
+  allow_loose_quantity?: boolean;
+  loose_min_quantity?: number | null;
+  loose_max_quantity?: number | null;
+  loose_step_quantity?: number | null;
+  loose_unit?: string | null;
 }
 
 export let cart: CartItem[] = [];
@@ -123,7 +131,12 @@ export function addToCart(product: any) {
   const existingItem = cart.find((item) => String(item.id) === String(product.id));
 
   if (existingItem) {
-    existingItem.quantity += 1;
+    const nextQuantity = product.cart_quantity != null ? Number(product.cart_quantity) : existingItem.quantity + 1;
+    existingItem.quantity = nextQuantity;
+    if (product.cart_quantity != null) {
+      existingItem.loose_quantity = nextQuantity;
+      existingItem.quantity_unit = product.quantity_unit || existingItem.quantity_unit || null;
+    }
   } else {
     cart.push({
       id: String(product.id),
@@ -135,9 +148,17 @@ export function addToCart(product: any) {
       stock: product.stock != null ? Number(product.stock) : null,
       category_id: product.category_id || null,
       description: product.description || null,
-      quantity: 1,
+      quantity: product.cart_quantity != null ? Number(product.cart_quantity) : 1,
+      loose_quantity: product.cart_quantity != null ? Number(product.cart_quantity) : null,
+      quantity_unit: product.quantity_unit || null,
       gst_rate: product.gst_rate != null ? Number(product.gst_rate) : 0,
       gst_slab: product.gst_slab || null,
+      is_exclusive: product.is_exclusive === true,
+      allow_loose_quantity: product.allow_loose_quantity === true,
+      loose_min_quantity: product.loose_min_quantity != null ? Number(product.loose_min_quantity) : null,
+      loose_max_quantity: product.loose_max_quantity != null ? Number(product.loose_max_quantity) : null,
+      loose_step_quantity: product.loose_step_quantity != null ? Number(product.loose_step_quantity) : null,
+      loose_unit: product.loose_unit || null,
     });
   }
 
@@ -150,7 +171,14 @@ export function increaseQuantity(productId: string) {
   const item = cart.find((item) => String(item.id) === String(productId));
 
   if (item) {
-    item.quantity += 1;
+    if (item.allow_loose_quantity && item.loose_step_quantity != null && item.loose_max_quantity != null) {
+      const next = Number((item.quantity + item.loose_step_quantity).toFixed(3));
+      if (next > item.loose_max_quantity) return;
+      item.quantity = next;
+      item.loose_quantity = next;
+    } else {
+      item.quantity += 1;
+    }
     saveCartLocally();
     notifyCartChange();
   }
@@ -161,10 +189,17 @@ export function decreaseQuantity(productId: string) {
   if (itemIndex === -1) return;
 
   const item = cart[itemIndex];
-  item.quantity -= 1;
-
-  if (item.quantity <= 0) {
-    cart.splice(itemIndex, 1);
+  if (item.allow_loose_quantity && item.loose_step_quantity != null && item.loose_min_quantity != null) {
+    const next = Number((item.quantity - item.loose_step_quantity).toFixed(3));
+    if (next < item.loose_min_quantity) {
+      cart.splice(itemIndex, 1);
+    } else {
+      item.quantity = next;
+      item.loose_quantity = next;
+    }
+  } else {
+    item.quantity -= 1;
+    if (item.quantity <= 0) cart.splice(itemIndex, 1);
   }
 
   saveCartLocally();
