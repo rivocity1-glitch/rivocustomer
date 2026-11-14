@@ -136,6 +136,7 @@ export function addToCart(product: any) {
 
   if (existingItem) {
     const nextQuantity = product.cart_quantity != null ? Number(product.cart_quantity) : existingItem.quantity + 1;
+    if (existingItem.stock != null && nextQuantity > Number(existingItem.stock)) return false;
     existingItem.quantity = nextQuantity;
     if (product.cart_quantity != null) {
       existingItem.loose_quantity = nextQuantity;
@@ -184,7 +185,9 @@ export function increaseQuantity(productKey: string) {
       item.quantity = next;
       item.loose_quantity = next;
     } else {
-      item.quantity += 1;
+      const nextQuantity = item.quantity + 1;
+      if (item.stock != null && nextQuantity > Number(item.stock)) return;
+      item.quantity = nextQuantity;
     }
     saveCartLocally();
     notifyCartChange();
