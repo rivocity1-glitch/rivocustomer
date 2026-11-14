@@ -3,6 +3,9 @@ import { supabase } from './supabase';
 
 export interface CartItem {
   id: string;
+  cart_key?: string;
+  variant_id?: string | null;
+  variant_name?: string | null;
   vendor_id: string;
   name: string;
   price: number;
@@ -128,7 +131,8 @@ export function addToCart(product: any) {
     return false;
   }
 
-  const existingItem = cart.find((item) => String(item.id) === String(product.id));
+  const cartKey = String(product.cart_key || product.id);
+  const existingItem = cart.find((item) => String(item.cart_key || item.id) === cartKey);
 
   if (existingItem) {
     const nextQuantity = product.cart_quantity != null ? Number(product.cart_quantity) : existingItem.quantity + 1;
@@ -140,6 +144,9 @@ export function addToCart(product: any) {
   } else {
     cart.push({
       id: String(product.id),
+      cart_key: cartKey,
+      variant_id: product.variant_id ? String(product.variant_id) : null,
+      variant_name: product.variant_name || null,
       vendor_id: String(product.vendor_id || ''),
       name: product.name || 'Product',
       price: Number(product.price || 0),
@@ -167,8 +174,8 @@ export function addToCart(product: any) {
   return true;
 }
 
-export function increaseQuantity(productId: string) {
-  const item = cart.find((item) => String(item.id) === String(productId));
+export function increaseQuantity(productKey: string) {
+  const item = cart.find((item) => String(item.cart_key || item.id) === String(productKey));
 
   if (item) {
     if (item.allow_loose_quantity && item.loose_step_quantity != null && item.loose_max_quantity != null) {
@@ -184,8 +191,8 @@ export function increaseQuantity(productId: string) {
   }
 }
 
-export function decreaseQuantity(productId: string) {
-  const itemIndex = cart.findIndex((item) => String(item.id) === String(productId));
+export function decreaseQuantity(productKey: string) {
+  const itemIndex = cart.findIndex((item) => String(item.cart_key || item.id) === String(productKey));
   if (itemIndex === -1) return;
 
   const item = cart[itemIndex];
@@ -206,8 +213,8 @@ export function decreaseQuantity(productId: string) {
   notifyCartChange();
 }
 
-export function removeFromCart(productId: string) {
-  const index = cart.findIndex((item) => String(item.id) === String(productId));
+export function removeFromCart(productKey: string) {
+  const index = cart.findIndex((item) => String(item.cart_key || item.id) === String(productKey));
 
   if (index !== -1) {
     cart.splice(index, 1);

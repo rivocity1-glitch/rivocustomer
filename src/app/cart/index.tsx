@@ -566,7 +566,7 @@ export default function CartScreen() {
 
         <FlatList
           data={cartItems}
-          keyExtractor={item => item.id}
+          keyExtractor={item => String(item.cart_key || item.id)}
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
@@ -652,7 +652,7 @@ export default function CartScreen() {
                 >
                   <Pressable
                     onPress={() => {
-                      removeFromCart(item.id);
+                      removeFromCart(String(item.cart_key || item.id));
                       refresh();
                     }}
                     style={({ pressed }) => [
@@ -675,7 +675,7 @@ export default function CartScreen() {
                   >
                     <Pressable
                       onPress={() => {
-                        decreaseQuantity(item.id);
+                        decreaseQuantity(String(item.cart_key || item.id));
                         refresh();
                       }}
                       style={({ pressed }) => [
@@ -701,7 +701,7 @@ export default function CartScreen() {
 
                     <Pressable
                       onPress={() => {
-                        increaseQuantity(item.id);
+                        increaseQuantity(String(item.cart_key || item.id));
                         refresh();
                       }}
                       style={({ pressed }) => [

@@ -25,6 +25,10 @@ export default function ProductScreen() {
   const [imageIndex, setImageIndex] = useState(0);
   const [looseQuantity, setLooseQuantity] = useState<number>(1);
   const [quantityError, setQuantityError] = useState('');
+  const [variationGroups, setVariationGroups] = useState<any[]>([]);
+  const [availableVariants, setAvailableVariants] = useState<any[]>([]);
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [variantsLoading, setVariantsLoading] = useState(false);
 
   useEffect(() => {
     loadProduct();
@@ -49,12 +53,67 @@ export default function ProductScreen() {
       const currentProduct = data[0];
       setProduct(currentProduct);
       setImageIndex(0);
+      void loadProductVariants(productId);
       if (currentProduct.vendor_id) {
         const { data: relatedData, error: relatedError } = await supabase
           .from('products').select('*').eq('vendor_id', currentProduct.vendor_id)
           .eq('status', 'active').neq('id', productId).limit(10);
         if (!relatedError && relatedData) setRelatedProducts(relatedData);
       }
+    }
+  }
+
+  async function loadProductVariants(productId: string) {
+    setVariantsLoading(true);
+    try {
+      const { data: groups, error: groupsError } = await supabase
+        .from('product_variation_groups')
+        .select('id,name,display_name,display_type,display_order')
+        .eq('product_id', productId)
+        .eq('is_active', true)
+        .order('display_order');
+      if (groupsError) throw groupsError;
+      const activeGroups = groups || [];
+      if (!activeGroups.length) {
+        setVariationGroups([]);
+        setAvailableVariants([]);
+        setSelectedOptions({});
+        return;
+      }
+      const groupIds = activeGroups.map((group: any) => group.id);
+      const { data: options, error: optionsError } = await supabase
+        .from('product_variation_options')
+        .select('id,variation_group_id,value,display_value,display_order')
+        .in('variation_group_id', groupIds)
+        .order('display_order');
+      if (optionsError) throw optionsError;
+      const { data: variants, error: variantsError } = await supabase
+        .from('product_variants')
+        .select('id,product_id,name,sku,barcode,price,mrp,stock,status,option_signature')
+        .eq('product_id', productId)
+        .in('status', ['active', 'out_of_stock']);
+      if (variantsError) throw variantsError;
+      const variantIds = (variants || []).map((variant: any) => variant.id);
+      const { data: links, error: linksError } = variantIds.length
+        ? await supabase.from('product_variant_options').select('variant_id,option_id').in('variant_id', variantIds)
+        : { data: [], error: null };
+      if (linksError) throw linksError;
+      setVariationGroups(activeGroups.map((group: any) => ({
+        ...group,
+        label: group.display_name || group.name,
+        options: (options || []).filter((option: any) => option.variation_group_id === group.id)
+      })));
+      setAvailableVariants((variants || []).map((variant: any) => ({
+        ...variant,
+        optionIds: (links || []).filter((link: any) => link.variant_id === variant.id).map((link: any) => link.option_id)
+      })));
+      setSelectedOptions({});
+    } catch (error) {
+      console.error('Could not load product variants:', error);
+      setVariationGroups([]);
+      setAvailableVariants([]);
+    } finally {
+      setVariantsLoading(false);
     }
   }
 
@@ -74,8 +133,16 @@ export default function ProductScreen() {
     </View>
   );
 
-  const sellingPrice = Number(product.price ?? 0);
-  const actualMrp = Number(product.mrp ?? sellingPrice);
+  const selectedVariant = variationGroups.length && Object.keys(selectedOptions).length === variationGroups.length
+    ? availableVariants.find((variant: any) => variationGroups.every((group: any) => {
+        const chosen = group.options.find((option: any) => option.id === selectedOptions[group.id]);
+        return chosen && variant.optionIds.includes(chosen.id);
+      }))
+    : null;
+  const variantSelectionRequired = variationGroups.length > 0;
+  const sellingPrice = Number(selectedVariant?.price ?? product.price ?? 0);
+  const actualMrp = Number(selectedVariant?.mrp ?? product.mrp ?? sellingPrice);
+  const availableStock = selectedVariant ? Number(selectedVariant.stock || 0) : Number(product.stock || 0);
   const totalSavings = Math.max(0, actualMrp - sellingPrice);
   const daysLeft = product.expiry_date
     ? Math.ceil((new Date(product.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
@@ -85,6 +152,25 @@ export default function ProductScreen() {
   const looseMax = Number(product.loose_max_quantity || 0);
   const looseStep = Number(product.loose_step_quantity || 1);
   const addProductToCart = () => {
+    if (variantSelectionRequired && !selectedVariant) {
+      setQuantityError('Select one option from every variation group.');
+      return;
+    }
+    if (selectedVariant && Number(selectedVariant.stock || 0) <= 0) {
+      setQuantityError('This variant is currently out of stock.');
+      return;
+    }
+    const cartProduct = selectedVariant ? {
+      ...product,
+      id: product.id,
+      cart_key: `${product.id}::${selectedVariant.id}`,
+      variant_id: selectedVariant.id,
+      variant_name: selectedVariant.name,
+      name: `${product.name} — ${selectedVariant.name}`,
+      price: Number(selectedVariant.price),
+      mrp: selectedVariant.mrp,
+      stock: Number(selectedVariant.stock || 0)
+    } : product;
     if (product.allow_loose_quantity === true) {
       const stepCount = Math.round((looseQuantity - looseMin) / looseStep);
       const alignedQuantity = looseMin + stepCount * looseStep;
@@ -92,12 +178,12 @@ export default function ProductScreen() {
         setQuantityError(`Choose between ${looseMin} and ${looseMax} ${product.loose_unit || ''} in steps of ${looseStep}.`);
         return;
       }
-      const added = addToCart({ ...product, cart_quantity: looseQuantity, quantity_unit: product.loose_unit || product.weight || '' });
+      const added = addToCart({ ...cartProduct, cart_quantity: looseQuantity, quantity_unit: product.loose_unit || product.weight || '' });
       if (!added) return;
       router.replace('/cart');
       return;
     }
-    if (!isInCart) addToCart(product);
+    if (!isInCart || selectedVariant) addToCart(cartProduct);
     router.replace('/cart');
   };
 
@@ -139,9 +225,9 @@ export default function ProductScreen() {
         <View style={styles.metaMainCard}>
           <View style={styles.badgeLineRow}>
             {product.is_exclusive === true && <View style={{ backgroundColor: '#0D0D0D', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}><Text style={{ color: '#A8E63A', fontSize: 10, fontWeight: '900' }}>RIVO EXCLUSIVE</Text></View>}
-            <View style={[styles.stockStatusBadgeContainer, { backgroundColor: product.stock === 0 ? '#EF444415' : product.stock <= 5 ? '#F9731615' : '#22CC7115' }]}>
-              <Text style={[styles.stockStatusBadgeText, { color: product.stock === 0 ? '#EF4444' : product.stock <= 5 ? '#F97316' : '#22CC71' }]}>
-                {product.stock === 0 ? '• Out of Stock' : product.stock <= 5 ? `• Only ${product.stock} Left` : '• In Stock'}
+            <View style={[styles.stockStatusBadgeContainer, { backgroundColor: availableStock === 0 ? '#EF444415' : availableStock <= 5 ? '#F9731615' : '#22CC7115' }]}>
+              <Text style={[styles.stockStatusBadgeText, { color: availableStock === 0 ? '#EF4444' : availableStock <= 5 ? '#F97316' : '#22CC71' }]}>
+                {availableStock === 0 ? '• Out of Stock' : availableStock <= 5 ? `• Only ${availableStock} Left` : '• In Stock'}
               </Text>
             </View>
             <View style={styles.deliverySpeedBadge}><Text style={styles.deliverySpeedText}>⚡ 10 MINS</Text></View>
@@ -165,6 +251,31 @@ export default function ProductScreen() {
           </View>
         </View>
 
+        {variationGroups.length > 0 && (
+          <View style={styles.contentDataSectionCard}>
+            <Text style={styles.sectionHeadingText}>Choose options</Text>
+            {variantsLoading ? <ActivityIndicator color="#22CC71" /> : variationGroups.map((group: any) => (
+              <View key={group.id} style={{ marginTop: 12 }}>
+                <Text style={{ color: '#0D0D0D', fontWeight: '800', marginBottom: 8 }}>{group.label}</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {group.options.map((option: any) => {
+                    const active = selectedOptions[group.id] === option.id;
+                    return <Pressable key={option.id} onPress={() => {
+                      setSelectedOptions(current => ({ ...current, [group.id]: option.id }));
+                      setQuantityError('');
+                    }} style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: active ? '#22CC71' : '#E2E8F0', backgroundColor: active ? '#E8FBF0' : '#FFFFFF' }}>
+                      <Text style={{ color: active ? '#166534' : '#334155', fontWeight: '700', fontSize: 12 }}>{option.display_value || option.value}</Text>
+                    </Pressable>;
+                  })}
+                </View>
+              </View>
+            ))}
+            {selectedVariant && <View style={{ marginTop: 14, padding: 12, backgroundColor: '#F0FDF4', borderRadius: 10 }}>
+              <Text style={{ color: '#166534', fontWeight: '800' }}>{selectedVariant.name}</Text>
+              <Text style={{ color: '#166534', marginTop: 4 }}>₹{Number(selectedVariant.price).toFixed(2)} · {Number(selectedVariant.stock || 0) > 0 ? `${selectedVariant.stock} available` : 'Out of stock'}</Text>
+            </View>}
+          </View>
+        )}
         {product.expiry_date && (
           <View style={styles.expiryAlertCard}><View style={styles.expiryLeftBlock}><Text style={styles.expiryCalendarIcon}>📅</Text><View><Text style={styles.expiryTitleLabel}>Expiry Timeline Information</Text><Text style={styles.expiryDetailText}>Best Before: {product.expiry_date}</Text></View></View>{daysLeft !== null && <View style={styles.daysCounterBadge}><Text style={styles.daysCounterText}>{daysLeft} days left</Text></View>}</View>
         )}
@@ -182,7 +293,7 @@ export default function ProductScreen() {
         {relatedProducts.length > 0 && <View style={styles.relatedProductsWrapper}><Text style={styles.sectionHeadingText}>More from this store</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.relatedScrollContent}>{relatedProducts.map(item => <Pressable key={item.id} onPress={() => router.push(`/product/${item.id}`)} style={styles.placeholderRelatedCard}><View style={styles.placeholderMiniImage}>{parseProductImages(item.image_url)[0] ? <Image source={{ uri: parseProductImages(item.image_url)[0] }} style={styles.relatedProductMiniImage} resizeMode="contain" /> : <Text style={styles.placeholderBoxIcon}>📦</Text>}</View><Text style={styles.placeholderCardTitle} numberOfLines={1}>{item.name}</Text><Text style={styles.placeholderCardPrice}>₹{item.price}</Text></Pressable>)}</ScrollView></View>}
       </ScrollView>
 
-      <View style={styles.stickyActionFooterBar}><View style={styles.footerPricingDisplayArea}><Text style={styles.footerTotalPriceText}>₹{sellingPrice}</Text><Text style={styles.footerMutedSubtitle}>Inclusive of standard retail taxes</Text></View><Pressable disabled={product.stock === 0} onPress={addProductToCart} style={[styles.primaryActionButton, product.stock === 0 ? styles.disabledStateButton : styles.activeStateButton]}><Text style={styles.primaryActionButtonTextLabel}>{product.stock === 0 ? 'Out Of Stock' : isInCart ? 'View Cart' : product.allow_loose_quantity === true ? 'Add selected quantity' : 'Add To Cart'}</Text></Pressable></View>
+      <View style={styles.stickyActionFooterBar}><View style={styles.footerPricingDisplayArea}><Text style={styles.footerTotalPriceText}>₹{sellingPrice}</Text><Text style={styles.footerMutedSubtitle}>Inclusive of standard retail taxes</Text></View><Pressable disabled={availableStock === 0 || (variantSelectionRequired && !selectedVariant)} onPress={addProductToCart} style={[styles.primaryActionButton, product.stock === 0 ? styles.disabledStateButton : styles.activeStateButton]}><Text style={styles.primaryActionButtonTextLabel}>{product.stock === 0 ? 'Out Of Stock' : isInCart ? 'View Cart' : product.allow_loose_quantity === true ? 'Add selected quantity' : 'Add To Cart'}</Text></Pressable></View>
     </View>
   );
 }
