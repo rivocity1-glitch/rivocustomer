@@ -888,6 +888,50 @@ export default function CheckoutScreen() {
       }
 
       /*
+       * STANDARD PRODUCT STOCK PRE-FLIGHT
+       * Variant lines are checked against product_variants above. Simple
+       * products are checked against products.stock here. This is validation
+       * only; stock is deducted by the vendor order-acceptance workflow so
+       * checkout does not double-deduct inventory.
+       */
+      const standardProductIds = Array.from(new Set(
+        cart
+          .filter(item => !item.variant_id && !item.allow_loose_quantity)
+          .map(item => item.id)
+      ));
+
+      if (standardProductIds.length > 0) {
+        const { data: currentProducts, error: productStockError } = await supabase
+          .from('products')
+          .select('id,name,stock,status')
+          .in('id', standardProductIds);
+
+        if (productStockError) {
+          throw new Error('Could not verify product stock. Please try again.');
+        }
+
+        const productById = new Map(
+          (currentProducts || []).map((product: any) => [String(product.id), product])
+        );
+
+        const unavailableProduct = cart.find(item => {
+          if (item.variant_id || item.allow_loose_quantity) return false;
+          const current: any = productById.get(String(item.id));
+          return !current ||
+            current.status !== 'active' ||
+            Number(current.stock || 0) < Number(item.quantity || 0);
+        });
+
+        if (unavailableProduct) {
+          Alert.alert(
+            'Product unavailable',
+            `${unavailableProduct.name} is no longer available in the selected quantity. Please update your cart.`
+          );
+          return;
+        }
+      }
+
+      /*
        * VALIDATE THAT EVERY ITEM HAS A VENDOR
        */
       const itemsWithoutVendor = cart.filter(
