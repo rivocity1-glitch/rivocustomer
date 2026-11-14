@@ -856,6 +856,38 @@ export default function CheckoutScreen() {
       }
 
       /*
+       * VARIANT STOCK PRE-FLIGHT
+       * The current order_items schema has no confirmed variant_id field.
+       * Recheck the selected variant stock before creating an order; the
+       * variant label and price are retained in the existing order item fields.
+       */
+      const selectedVariantIds = Array.from(new Set(
+        cart.map(item => item.variant_id).filter((value): value is string => !!value)
+      ));
+      if (selectedVariantIds.length > 0) {
+        const { data: currentVariants, error: variantStockError } = await supabase
+          .from('product_variants')
+          .select('id,name,stock,status')
+          .in('id', selectedVariantIds);
+        if (variantStockError) {
+          throw new Error('Could not verify variant availability. Please try again.');
+        }
+        const variantById = new Map((currentVariants || []).map((variant: any) => [variant.id, variant]));
+        const unavailable = cart.find(item => {
+          if (!item.variant_id) return false;
+          const variant: any = variantById.get(item.variant_id);
+          return !variant || variant.status !== 'active' || Number(variant.stock || 0) < Number(item.quantity || 0);
+        });
+        if (unavailable) {
+          Alert.alert(
+            'Variant unavailable',
+            `${unavailable.name} is no longer available in the selected quantity. Please update your cart.`
+          );
+          return;
+        }
+      }
+
+      /*
        * VALIDATE THAT EVERY ITEM HAS A VENDOR
        */
       const itemsWithoutVendor = cart.filter(
