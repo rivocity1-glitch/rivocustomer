@@ -90,9 +90,9 @@ export default function ProductScreen() {
 
   async function loadProduct() {
     const productId = Array.isArray(id) ? id[0] : id;
-    const { data, error } = await supabase.from('products').select('*').eq('id', productId);
-    if (!error && data && data.length > 0) {
-      const currentProduct = data[0];
+    const { data, error } = await supabase.from('products').select('*').eq('id', productId).eq('status', 'active').gt('stock', 0).maybeSingle();
+    if (!error && data) {
+      const currentProduct = data;
       setProduct(currentProduct);
       setImageIndex(0);
       setSharedImageUrls([]);
