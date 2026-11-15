@@ -1863,14 +1863,10 @@ export default function StoreScreen() {
       supabase
         .from('products')
         .select('*')
-        .eq(
-          'vendor_id',
-          vendorId
-        )
-        .eq(
-          'status',
-          'active'
-        );
+        .eq('vendor_id', vendorId)
+        .eq('status', 'active')
+        .gt('stock', 0)
+        .order('name', { ascending: true });
 
     const [
       catRes,
