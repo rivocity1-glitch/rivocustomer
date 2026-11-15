@@ -171,7 +171,8 @@ export default function HomeScreen() {
           const { data: prodData } = await supabase
             .from('products')
             .select('id, vendor_id, category_id, status, is_exclusive')
-            .eq('status', 'active');
+            .eq('status', 'active')
+            .gt('stock', 0);
 
           if (isMounted && prodData) {
             setProducts(prodData);
