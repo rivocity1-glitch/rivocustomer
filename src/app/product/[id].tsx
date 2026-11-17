@@ -191,10 +191,10 @@ export default function ProductScreen() {
   const daysLeft = product.expiry_date
     ? Math.ceil((new Date(product.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : null;
-  // Prefer vendor-specific gallery images. Use the shared catalogue only
-  // when this vendor has not supplied its own image.
+  // The Admin master catalogue is the canonical image source for matched products.
+  // Vendor-specific images are only a fallback when no shared catalogue image exists.
   const vendorImages = parseProductImages(product.image_url);
-  const images = vendorImages.length ? vendorImages : sharedImageUrls;
+  const images = sharedImageUrls.length ? sharedImageUrls : vendorImages;
   const looseMin = Number(product.loose_min_quantity || 0);
   const looseMax = Number(product.loose_max_quantity || 0);
   const looseStep = Number(product.loose_step_quantity || 1);
@@ -209,7 +209,7 @@ export default function ProductScreen() {
     }
     const cartProduct = selectedVariant ? {
       ...product,
-      image_url: vendorImages.length ? product.image_url : (images[0] || null),
+      image_url: images[0] || product.image_url || null,
       id: product.id,
       cart_key: `${product.id}::${selectedVariant.id}`,
       variant_id: selectedVariant.id,
@@ -220,7 +220,7 @@ export default function ProductScreen() {
       stock: Number(selectedVariant.stock || 0)
     } : {
       ...product,
-      image_url: vendorImages.length ? product.image_url : (images[0] || null)
+      image_url: images[0] || product.image_url || null
     };
     if (product.allow_loose_quantity === true) {
       const stepCount = Math.round((looseQuantity - looseMin) / looseStep);
