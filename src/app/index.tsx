@@ -38,7 +38,7 @@ interface Product {
 
 export default function HomeScreen() {
   const { width: windowWidth } = useWindowDimensions();
-  const storeTileSize = Math.max(132, Math.floor((windowWidth - 32 - 12) / 2));
+  const storeTileSize = Math.max(110, Math.floor((windowWidth - 32 - 12) / 2));
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
