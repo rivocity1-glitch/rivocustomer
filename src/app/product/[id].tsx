@@ -1,10 +1,8 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { addToCart, cart } from '../../lib/cart';
 import { supabase } from '../../lib/supabase';
-
-const { width } = Dimensions.get('window');
 
 function parseProductImages(value: unknown): string[] {
   if (!value) return [];
@@ -18,6 +16,7 @@ function parseProductImages(value: unknown): string[] {
 }
 
 export default function ProductScreen() {
+  const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams();
   const [product, setProduct] = useState<any>(null);
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
@@ -48,17 +47,45 @@ export default function ProductScreen() {
 
   async function loadProduct() {
     const productId = Array.isArray(id) ? id[0] : id;
-    const { data, error } = await supabase.from('products').select('*').eq('id', productId).eq('status', 'active').gt('stock', 0).maybeSingle();
-    if (!error && data) {
-      const currentProduct = data;
-      setProduct(currentProduct);
-      setImageIndex(0);
-      void loadProductVariants(productId);
-      if (currentProduct.vendor_id) {
-        const { data: relatedData, error: relatedError } = await supabase
-          .from('products').select('*').eq('vendor_id', currentProduct.vendor_id)
-          .eq('status', 'active').neq('id', productId).limit(10);
-        if (!relatedError && relatedData) setRelatedProducts(relatedData);
+    if (!productId) return;
+
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', productId)
+      .eq('status', 'active')
+      .gt('stock', 0)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Could not load product:', error);
+      return;
+    }
+    if (!data) {
+      setProduct(null);
+      setRelatedProducts([]);
+      return;
+    }
+
+    setProduct(data);
+    setImageIndex(0);
+    void loadProductVariants(productId);
+
+    if (data.vendor_id) {
+      const { data: relatedData, error: relatedError } = await supabase
+        .from('products')
+        .select('id, name, price, image_url, vendor_id')
+        .eq('vendor_id', data.vendor_id)
+        .eq('status', 'active')
+        .gt('stock', 0)
+        .neq('id', productId)
+        .order('name', { ascending: true })
+        .limit(6);
+
+      if (relatedError) {
+        console.warn('Related products could not be loaded:', relatedError.message);
+      } else {
+        setRelatedProducts(relatedData || []);
       }
     }
   }
