@@ -124,19 +124,13 @@ export default function OrdersScreen() {
   };
 
   const processRepeatOrder = async (orderId: string) => {
-    console.log("=== [DIAGNOSTIC] processRepeatOrder Initiated ===");
-    console.log("[DIAGNOSTIC] Selected orderId:", orderId);
-
     try {
       const {
         data: { user },
         error: authError,
       } = await supabase.auth.getUser();
 
-      console.log("[DIAGNOSTIC] Authenticated User ID:", user?.id || "NONE");
-
       if (authError || !user) {
-        console.error("[DIAGNOSTIC] Auth error encountered:", authError);
         Alert.alert("Error", "User not authenticated.");
         return;
       }
@@ -147,17 +141,12 @@ export default function OrdersScreen() {
         .eq('auth_user_id', user.id)
         .single();
 
-      console.log("[DIAGNOSTIC] Resolved Customer ID:", customer?.id || "NONE");
-
       if (customerError || !customer) {
-        console.error("[DIAGNOSTIC] Customer fetch error encountered:", customerError);
         Alert.alert("Error", "Customer profile not found.");
         return;
       }
 
-      // 1. Query order items with deep diagnostic inspection
-      console.log("[DIAGNOSTIC] Executing order_items query for order_id:", orderId);
-      const response = await supabase
+      const { data: orderItems, error: itemsError } = await supabase
         .from('order_items')
         .select(`
           id,
@@ -174,58 +163,18 @@ export default function OrdersScreen() {
         `)
         .eq('order_id', orderId);
 
-      const { data: orderItems, error: itemsError } = response;
-
-      console.log("[DIAGNOSTIC] Complete Raw Supabase Response:", JSON.stringify(response, null, 2));
-
-      if (itemsError) {
-        console.error("[DIAGNOSTIC] Query Failed - Error Details:", {
-          code: itemsError.code,
-          message: itemsError.message,
-          details: itemsError.details,
-          hint: itemsError.hint,
-        });
-      }
-
-      console.log("[DIAGNOSTIC] Rows returned count:", orderItems ? orderItems.length : 0);
+      if (itemsError) throw itemsError;
 
       if (!orderItems || orderItems.length === 0) {
-        console.warn(`[DIAGNOSTIC] No order_items rows exist in database matching order_id: "${orderId}"`);
         Alert.alert("Error", "Unable to retrieve items for this order.");
         return;
       }
 
       const rawItems = orderItems as unknown as OrderItemFetch[];
-      const firstRow = rawItems[0];
-
-      console.log("[DIAGNOSTIC] Raw structure of first returned row:", JSON.stringify(firstRow, null, 2));
-      console.log("[DIAGNOSTIC] Detected keys on first row:", Object.keys(firstRow));
-      console.log("[DIAGNOSTIC] 'products' property value:", firstRow.products);
-      console.log("[DIAGNOSTIC] 'product' property value:", firstRow.product);
-
-      // Check for null products/relations across all items
-      rawItems.forEach((item, index) => {
-        const prod = item.products || item.product;
-        if (!prod) {
-          console.warn(`[DIAGNOSTIC] Item at index ${index} has NULL product reference:`, {
-            rawItem: item,
-            availableKeys: Object.keys(item),
-          });
-        }
-      });
-
-      // 2. Filter & Validate available products using schema 'status' column
       const validItems = rawItems.filter((item) => {
         const prod = item.products || item.product;
-        if (!prod) return false; // Deleted product
-
-        // Skip inactive or unavailable products based on status
-        if (prod.status && prod.status.toLowerCase() !== 'active') return false;
-
-        return true;
+        return Boolean(prod) && (!prod?.status || prod.status.toLowerCase() === 'active');
       });
-
-      console.log("[DIAGNOSTIC] Valid items count after availability checks:", validItems.length);
 
       if (validItems.length === 0) {
         Alert.alert("Notice", "Some products from this order are no longer available.");
@@ -233,10 +182,9 @@ export default function OrdersScreen() {
       }
 
       const isPartial = validItems.length < rawItems.length;
-
       await rebuildCartAndNavigate(customer.id, validItems, isPartial);
     } catch (err) {
-      console.error('[DIAGNOSTIC] Uncaught Repeat order error:', err);
+      console.error('Repeat order failed:', err);
       Alert.alert("Error", "Could not process repeat order at this time.");
     }
   };
