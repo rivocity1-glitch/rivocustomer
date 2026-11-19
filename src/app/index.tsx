@@ -120,65 +120,71 @@ export default function HomeScreen() {
           } = await supabase.auth.getUser();
 
           if (!user) {
-            setLoading(false);
+            if (isMounted) setLoading(false);
             return;
           }
 
-          // Fetch fresh unread count on focus return
-          getUnreadCustomerNotificationCount().then((cnt) => {
-            if (isMounted) setUnreadCount(cnt);
-          });
+          // Independent home data requests run together to reduce screen wait time.
+          const [profileResult, categoryResult, vendorResult, unreadCountResult] = await Promise.all([
+            supabase
+              .from('customers')
+              .select('customer_name')
+              .eq('auth_user_id', user.id)
+              .maybeSingle(),
+            supabase
+              .from('product_categories')
+              .select('id, name'),
+            supabase
+              .from('vendors')
+              .select('id, shop_name, status, vendor_profiles(avatar_url)')
+              .eq('status', 'approved'),
+            getUnreadCustomerNotificationCount(),
+          ]);
 
-          // 1. Fetch customer profile
-          const { data: profile } = await supabase
-            .from('customers')
-            .select('customer_name')
-            .eq('auth_user_id', user.id)
-            .single();
+          if (!isMounted) return;
 
-          if (isMounted && profile) {
-            setCustomerName(profile.customer_name);
+          if (profileResult.error) {
+            console.warn('Customer name could not be loaded:', profileResult.error.message);
+          } else if (profileResult.data) {
+            setCustomerName(profileResult.data.customer_name || '');
           }
 
-          // 2. Fetch categories
-          const { data: catData } = await supabase
-            .from('product_categories')
-            .select('id, name');
-
+          const catData = categoryResult.data || [];
+          setCategories(catData);
           const map: Record<string, string> = {};
-          if (catData) {
-            if (isMounted) setCategories(catData);
-            catData.forEach((cat: Category) => {
-              map[cat.id] = cat.name;
-            });
-            if (isMounted) setCategoryMap(map);
-          }
+          catData.forEach((cat: Category) => {
+            map[cat.id] = cat.name;
+          });
+          setCategoryMap(map);
 
-          // 3. Fetch approved vendors
-          const { data: vendorData } = await supabase
-            .from('vendors')
-            .select('*, vendor_profiles(avatar_url)')
-            .eq('status', 'approved');
+          const vendorData = vendorResult.data || [];
+          const parsedVendors = vendorData.map((v: any) => ({
+            ...v,
+            avatar_url: Array.isArray(v.vendor_profiles)
+              ? v.vendor_profiles[0]?.avatar_url || null
+              : v.vendor_profiles?.avatar_url || null,
+          }));
+          setVendors(parsedVendors);
+          setUnreadCount(unreadCountResult);
 
-          if (isMounted && vendorData) {
-            const parsedVendors = vendorData.map((v: any) => ({
-              ...v,
-              avatar_url: Array.isArray(v.vendor_profiles)
-                ? v.vendor_profiles[0]?.avatar_url
-                : v.vendor_profiles?.avatar_url || null,
-            }));
-            setVendors(parsedVendors);
-          }
+          // Only fetch in-stock active products belonging to approved vendors.
+          // These are the only products needed to decide category-to-store matching.
+          const vendorIds = parsedVendors.map((vendor: Vendor) => vendor.id);
+          if (vendorIds.length === 0) {
+            setProducts([]);
+          } else {
+            const { data: prodData, error: productError } = await supabase
+              .from('products')
+              .select('vendor_id, category_id')
+              .in('vendor_id', vendorIds)
+              .eq('status', 'active')
+              .gt('stock', 0);
 
-          // 4. Fetch active products
-          const { data: prodData } = await supabase
-            .from('products')
-            .select('id, vendor_id, category_id, status, is_exclusive')
-            .eq('status', 'active')
-            .gt('stock', 0);
-
-          if (isMounted && prodData) {
-            setProducts(prodData);
+            if (productError) {
+              console.warn('Store categories could not be refreshed:', productError.message);
+            } else if (isMounted) {
+              setProducts(prodData || []);
+            }
           }
         } catch (error) {
           console.error('Error refreshing home data:', error);
