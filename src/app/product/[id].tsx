@@ -20,7 +20,6 @@ function parseProductImages(value: unknown): string[] {
 export default function ProductScreen() {
   const { id } = useLocalSearchParams();
   const [product, setProduct] = useState<any>(null);
-  const [sharedImageUrls, setSharedImageUrls] = useState<string[]>([]);
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
   const [isInCart, setIsInCart] = useState<boolean>(false);
   const [imageIndex, setImageIndex] = useState(0);
@@ -47,47 +46,6 @@ export default function ProductScreen() {
     }
   }, [product?.id, product?.allow_loose_quantity, product?.loose_min_quantity]);
 
-  async function loadSharedProductImages(productId: string): Promise<string[]> {
-    try {
-      // Resolve this vendor listing to its shared catalogue identity.
-      const { data: resolverData, error: resolverError } = await supabase.rpc(
-        'resolve_product_master',
-        { p_product_id: productId }
-      );
-      if (resolverError) throw resolverError;
-
-      const resolverResult = Array.isArray(resolverData) ? resolverData[0] : resolverData;
-      const universalId = resolverResult?.universal_product_id;
-      if (!universalId) return [];
-
-      const { data: gallery, error: galleryError } = await supabase
-        .from('universal_product_images')
-        .select('image_url,is_primary,created_at')
-        .eq('universal_product_id', universalId)
-        .order('is_primary', { ascending: false })
-        .order('created_at', { ascending: true });
-      if (galleryError) throw galleryError;
-
-      const galleryUrls = (gallery || [])
-        .map((row: any) => row.image_url)
-        .filter((url: unknown): url is string => typeof url === 'string' && /^https?:\\/\\//i.test(url));
-      if (galleryUrls.length) return Array.from(new Set(galleryUrls));
-
-      // Backward-compatible fallback for catalogue rows that have a canonical
-      // image URL but do not yet have a gallery record.
-      const { data: universalProduct, error: universalError } = await supabase
-        .from('universal_products')
-        .select('image_url')
-        .eq('id', universalId)
-        .maybeSingle();
-      if (universalError) throw universalError;
-      return universalProduct?.image_url ? [universalProduct.image_url] : [];
-    } catch (error) {
-      console.warn('Could not load shared catalogue images:', error);
-      return [];
-    }
-  }
-
   async function loadProduct() {
     const productId = Array.isArray(id) ? id[0] : id;
     const { data, error } = await supabase.from('products').select('*').eq('id', productId).eq('status', 'active').gt('stock', 0).maybeSingle();
@@ -95,8 +53,6 @@ export default function ProductScreen() {
       const currentProduct = data;
       setProduct(currentProduct);
       setImageIndex(0);
-      setSharedImageUrls([]);
-      void loadSharedProductImages(productId).then(setSharedImageUrls);
       void loadProductVariants(productId);
       if (currentProduct.vendor_id) {
         const { data: relatedData, error: relatedError } = await supabase
@@ -194,7 +150,7 @@ export default function ProductScreen() {
   // Vendor-uploaded product photos take priority; shared images are fallback only.
   
   const vendorImages = parseProductImages(product.image_url);
-  const images = vendorImages.length ? vendorImages : sharedImageUrls;
+  const images = vendorImages;
   const looseMin = Number(product.loose_min_quantity || 0);
   const looseMax = Number(product.loose_max_quantity || 0);
   const looseStep = Number(product.loose_step_quantity || 1);
