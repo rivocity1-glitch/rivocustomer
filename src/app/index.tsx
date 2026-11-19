@@ -426,6 +426,7 @@ export default function HomeScreen() {
                       source={{ uri: vendor.avatar_url }}
                       style={styles.storeAvatar}
                       resizeMode="cover"
+                      accessibilityLabel={`${vendor.shop_name} store image`}
                     />
                   ) : (
                     <View style={styles.avatarPlaceholder}>
@@ -481,15 +482,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   contentContainer: {
-    paddingTop: 54,
+    paddingTop: 52,
     paddingHorizontal: 16,
-    paddingBottom: 120,
+    paddingBottom: 132,
   },
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 22,
   },
   headerActionsWrapper: {
     flexDirection: 'row',
@@ -586,11 +587,12 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
-    backgroundColor: '#F7F8FA',
-    borderRadius: 16,
+    minHeight: 52,
+    marginBottom: 28,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#EAEFF3',
+    borderColor: '#E7ECF1',
     shadowColor: '#0D0D0D',
     shadowOffset: { width: 0, height: 2 },
   },
@@ -608,7 +610,7 @@ const styles = StyleSheet.create({
     color: '#0D0D0D',
   },
   sectionContainer: {
-    marginBottom: 24,
+    marginBottom: 28,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -679,22 +681,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 14,
+    rowGap: 16,
   },
   storeCard: {
-    width: '48.2%',
+    width: '48.4%',
     aspectRatio: 1,
-    borderRadius: 20,
+    borderRadius: 22,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E5EAF0',
     overflow: 'hidden',
     position: 'relative',
     shadowColor: '#0D0D0D',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.045,
-    shadowRadius: 9,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
   pressedCard: {
     opacity: 0.92,
@@ -702,11 +704,15 @@ const styles = StyleSheet.create({
     borderColor: '#22CC71',
   },
   storeAvatar: {
-    ...StyleSheet.absoluteFillObject,
-    width: undefined,
-    height: undefined,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
     borderRadius: 0,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#E9EEF2',
   },
   avatarPlaceholder: {
     ...StyleSheet.absoluteFillObject,
@@ -725,11 +731,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: 10,
-    paddingTop: 22,
-    paddingBottom: 11,
-    backgroundColor: 'rgba(13,13,13,0.66)',
-    minHeight: 48,
+    paddingHorizontal: 12,
+    paddingTop: 24,
+    paddingBottom: 12,
+    backgroundColor: 'rgba(13,13,13,0.68)',
+    minHeight: 54,
     justifyContent: 'center',
   },
   storeNameText: {
@@ -738,7 +744,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     textAlign: 'center',
     width: '100%',
-    lineHeight: 17,
+    lineHeight: 18,
+    letterSpacing: 0.1,
   },
   loadingContainer: {
     paddingVertical: 48,
@@ -792,7 +799,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 84,
+    height: 88,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
