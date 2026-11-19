@@ -2213,7 +2213,6 @@ export default function StoreScreen() {
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={7}
-        removeClippedSubviews
         columnWrapperStyle={
           styles.rowWrapper
         }
