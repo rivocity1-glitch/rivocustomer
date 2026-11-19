@@ -191,10 +191,10 @@ export default function ProductScreen() {
   const daysLeft = product.expiry_date
     ? Math.ceil((new Date(product.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : null;
-  // The Admin master catalogue is the canonical image source for matched products.
-  // Vendor-specific images are only a fallback when no shared catalogue image exists.
+  // Vendor-uploaded product photos take priority; shared images are fallback only.
+  
   const vendorImages = parseProductImages(product.image_url);
-  const images = sharedImageUrls.length ? sharedImageUrls : vendorImages;
+  const images = vendorImages.length ? vendorImages : sharedImageUrls;
   const looseMin = Number(product.loose_min_quantity || 0);
   const looseMax = Number(product.loose_max_quantity || 0);
   const looseStep = Number(product.loose_step_quantity || 1);
