@@ -108,14 +108,25 @@ const BANNER_HEIGHT =
 
 // --- HAVERSINE DISTANCE HELPER ---
 function parseProductImages(value: unknown): string[] {
+  const normalize = (items: unknown[]) => items
+    .filter((item): item is string => typeof item === 'string')
+    .map(item => item.trim())
+    .filter(item => /^https?:\/\//i.test(item));
+
   if (!value) return [];
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && !!item);
+  if (Array.isArray(value)) return normalize(value);
   if (typeof value !== 'string') return [];
+
+  const raw = value.trim();
+  if (!raw) return [];
   try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === 'string' && !!item);
-  } catch {}
-  return [value];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return normalize(parsed);
+    if (typeof parsed === 'string') return normalize([parsed]);
+  } catch {
+    // A plain URL is also supported.
+  }
+  return normalize([raw]);
 }
 
 function calculateDistance(
@@ -3333,10 +3344,12 @@ const styles =
 
     imageContainer: {
       width: '100%',
-      aspectRatio: 1.15,
-      backgroundColor:
-        '#F8FAFC',
+      // Give the grid image a concrete height so Android can lay it out
+      // reliably inside a FlatList card before the image request completes.
+      height: CARD_WIDTH / 1.15,
+      backgroundColor: '#F8FAFC',
       position: 'relative',
+      overflow: 'hidden',
     },
 
     productImage: {
