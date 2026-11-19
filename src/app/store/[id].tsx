@@ -64,7 +64,6 @@ interface Product {
   price: number;
   mrp?: number | null;
   image_url?: string | null;
-  universal_product_id?: string | null;
   category_id?: string | null;
   status?: string | null;
   stock?: number | null;
@@ -1887,46 +1886,7 @@ export default function StoreScreen() {
     }
 
     if (!prodRes.error && prodRes.data) {
-      const productRows = prodRes.data as Product[];
-      const masterIds = Array.from(new Set(
-        productRows
-          .filter(product => !parseProductImages(product.image_url).length && product.universal_product_id)
-          .map(product => product.universal_product_id as string)
-      ));
-
-      if (masterIds.length) {
-        const [{ data: masters, error: masterError }, { data: gallery, error: galleryError }] = await Promise.all([
-          supabase.from('universal_products')
-            .select('id,image_url')
-            .in('id', masterIds),
-          supabase.from('universal_product_images')
-            .select('universal_product_id,image_url,is_primary,created_at')
-            .in('universal_product_id', masterIds)
-            .order('is_primary', { ascending: false })
-            .order('created_at', { ascending: true })
-        ]);
-
-        if (masterError) console.warn('Could not load shared catalogue product images:', masterError);
-        if (galleryError) console.warn('Could not load shared catalogue image gallery:', galleryError);
-
-        const masterImageById = new Map<string, string>();
-        (masters || []).forEach((master: any) => {
-          if (master.image_url) masterImageById.set(master.id, master.image_url);
-        });
-        (gallery || []).forEach((image: any) => {
-          if (!masterImageById.has(image.universal_product_id) && image.image_url) {
-            masterImageById.set(image.universal_product_id, image.image_url);
-          }
-        });
-
-        productRows.forEach(product => {
-          if (!parseProductImages(product.image_url).length && product.universal_product_id) {
-            const sharedImage = masterImageById.get(product.universal_product_id);
-            if (sharedImage) product.image_url = sharedImage;
-          }
-        });
-      }
-      setProducts(productRows);
+      setProducts(prodRes.data as Product[]);
     }
   }
 
