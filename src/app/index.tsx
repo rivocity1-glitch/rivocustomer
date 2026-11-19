@@ -424,27 +424,27 @@ export default function HomeScreen() {
                   accessibilityLabel={`Open ${vendor.shop_name}`}
                   style={({ pressed }) => [
                     styles.storeCard,
-                    { width: storeTileSize, height: storeTileSize },
+                    { width: storeTileSize },
                     pressed && styles.pressedCard,
                   ]}
                 >
-                  {vendor.avatar_url ? (
-                    <Image
-                      source={{ uri: vendor.avatar_url }}
-                      style={styles.storeAvatar}
-                      resizeMode="cover"
-                      accessibilityLabel={`${vendor.shop_name} store image`}
-                    />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarPlaceholderText}>{getInitials(vendor.shop_name)}</Text>
-                    </View>
-                  )}
-                  <View style={styles.storeNameOverlay}>
-                    <Text style={styles.storeNameText} numberOfLines={2}>
-                      {vendor.shop_name}
-                    </Text>
+                  <View style={[styles.storeImageFrame, { width: storeTileSize, height: storeTileSize }]}>
+                    {vendor.avatar_url ? (
+                      <Image
+                        source={{ uri: vendor.avatar_url }}
+                        style={styles.storeAvatar}
+                        resizeMode="cover"
+                        accessibilityLabel={`${vendor.shop_name} store image`}
+                      />
+                    ) : (
+                      <View style={styles.avatarPlaceholder}>
+                        <Text style={styles.avatarPlaceholderText}>{getInitials(vendor.shop_name)}</Text>
+                      </View>
+                    )}
                   </View>
+                  <Text style={styles.storeNameText} numberOfLines={2}>
+                    {vendor.shop_name}
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -692,62 +692,49 @@ const styles = StyleSheet.create({
     rowGap: 16,
   },
   storeCard: {
-    borderRadius: 22,
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#E5EAF0',
-    overflow: 'hidden',
-    position: 'relative',
-    shadowColor: '#0D0D0D',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
+    alignItems: 'center',
+    marginBottom: 2,
   },
   pressedCard: {
-    opacity: 0.92,
+    opacity: 0.88,
     transform: [{ scale: 0.975 }],
-    borderColor: '#22CC71',
+  },
+  storeImageFrame: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#22CC71',
+    borderWidth: 1,
+    borderColor: '#DDE7E1',
+    shadowColor: '#0D0D0D',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
+    elevation: 3,
   },
   storeAvatar: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
     width: '100%',
     height: '100%',
-    borderRadius: 0,
     backgroundColor: '#E9EEF2',
   },
   avatarPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#22CC71',
   },
   avatarPlaceholderText: {
     color: '#FFFFFF',
-    fontSize: 32,
+    fontSize: 38,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
-  storeNameOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 12,
-    paddingTop: 24,
-    paddingBottom: 12,
-    backgroundColor: 'rgba(13,13,13,0.68)',
-    minHeight: 54,
-    justifyContent: 'center',
-  },
   storeNameText: {
+    marginTop: 8,
     fontSize: 13,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#0D0D0D',
     textAlign: 'center',
     width: '100%',
     lineHeight: 18,
