@@ -12,6 +12,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { getUnreadCustomerNotificationCount } from '../services/notificationService';
@@ -36,6 +37,8 @@ interface Product {
 }
 
 export default function HomeScreen() {
+  const { width: windowWidth } = useWindowDimensions();
+  const storeTileSize = Math.max(132, Math.floor((windowWidth - 32 - 12) / 2));
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -419,7 +422,11 @@ export default function HomeScreen() {
                   onPress={() => router.push(`/store/${vendor.id}` as any)}
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${vendor.shop_name}`}
-                  style={({ pressed }) => [styles.storeCard, pressed && styles.pressedCard]}
+                  style={({ pressed }) => [
+                    styles.storeCard,
+                    { width: storeTileSize, height: storeTileSize },
+                    pressed && styles.pressedCard,
+                  ]}
                 >
                   {vendor.avatar_url ? (
                     <Image
@@ -680,12 +687,11 @@ const styles = StyleSheet.create({
   storesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
+    columnGap: 12,
     rowGap: 16,
   },
   storeCard: {
-    width: '48.4%',
-    aspectRatio: 1,
     borderRadius: 22,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
