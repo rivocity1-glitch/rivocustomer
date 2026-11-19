@@ -417,19 +417,22 @@ export default function HomeScreen() {
                 <Pressable
                   key={vendor.id}
                   onPress={() => router.push(`/store/${vendor.id}` as any)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${vendor.shop_name}`}
                   style={({ pressed }) => [styles.storeCard, pressed && styles.pressedCard]}
                 >
-                  <View style={styles.storeCardAccent} />
                   {vendor.avatar_url ? (
-                    <View style={styles.avatarContainer}>
-                      <Image source={{ uri: vendor.avatar_url }} style={styles.storeAvatar} />
-                    </View>
+                    <Image
+                      source={{ uri: vendor.avatar_url }}
+                      style={styles.storeAvatar}
+                      resizeMode="cover"
+                    />
                   ) : (
                     <View style={styles.avatarPlaceholder}>
                       <Text style={styles.avatarPlaceholderText}>{getInitials(vendor.shop_name)}</Text>
                     </View>
                   )}
-                  <View style={styles.storeInfoWrapper}>
+                  <View style={styles.storeNameOverlay}>
                     <Text style={styles.storeNameText} numberOfLines={2}>
                       {vendor.shop_name}
                     </Text>
@@ -478,7 +481,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   contentContainer: {
-    paddingTop: 60,
+    paddingTop: 54,
     paddingHorizontal: 16,
     paddingBottom: 120,
   },
@@ -605,7 +608,7 @@ const styles = StyleSheet.create({
     color: '#0D0D0D',
   },
   sectionContainer: {
-    marginBottom: 28,
+    marginBottom: 24,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -614,10 +617,10 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '900',
     color: '#0D0D0D',
-    letterSpacing: -0.3,
+    letterSpacing: -0.25,
   },
   sectionSubtitle: {
     fontSize: 12,
@@ -676,89 +679,66 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: 12,
+    rowGap: 14,
   },
   storeCard: {
-    backgroundColor: '#F7F8FA',
+    width: '48.2%',
+    aspectRatio: 1,
     borderRadius: 20,
-    width: '48%',
-    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: '#EAEFF3',
+    borderColor: '#E5EAF0',
     overflow: 'hidden',
-    paddingTop: 18,
-    paddingBottom: 18,
-    paddingHorizontal: 12,
+    position: 'relative',
     shadowColor: '#0D0D0D',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.02,
-    shadowRadius: 10,
-    elevation: 1,
-  },
-  storeCardAccent: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    backgroundColor: '#A8E63A',
-    opacity: 0.4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.045,
+    shadowRadius: 9,
+    elevation: 2,
   },
   pressedCard: {
-    opacity: 0.9,
-    transform: [{ scale: 0.98 }],
+    opacity: 0.92,
+    transform: [{ scale: 0.975 }],
     borderColor: '#22CC71',
   },
-  avatarContainer: {
-    shadowColor: '#0D0D0D',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-    marginBottom: 12,
-  },
   storeAvatar: {
-    width: 84,
-    height: 84,
-    borderRadius: 28,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+    borderRadius: 0,
+    backgroundColor: '#F1F5F9',
   },
   avatarPlaceholder: {
-    width: 84,
-    height: 84,
-    borderRadius: 28,
-    backgroundColor: '#22CC71',
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: '#22CC71',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 4,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    backgroundColor: '#22CC71',
   },
   avatarPlaceholderText: {
     color: '#FFFFFF',
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
-  storeInfoWrapper: {
-    alignItems: 'center',
-    width: '100%',
+  storeNameOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 10,
+    paddingTop: 22,
+    paddingBottom: 11,
+    backgroundColor: 'rgba(13,13,13,0.66)',
+    minHeight: 48,
     justifyContent: 'center',
   },
   storeNameText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
-    color: '#0D0D0D',
+    color: '#FFFFFF',
     textAlign: 'center',
     width: '100%',
-    lineHeight: 18,
+    lineHeight: 17,
   },
   loadingContainer: {
     paddingVertical: 48,
