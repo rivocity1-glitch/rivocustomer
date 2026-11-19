@@ -1873,7 +1873,7 @@ export default function StoreScreen() {
     const prodPromise =
       supabase
         .from('products')
-        .select('*')
+        .select('id, name, description, price, mrp, image_url, category_id, status, stock, vendor_id, weight, gst_rate, gst_slab, is_exclusive, allow_loose_quantity, loose_min_quantity, loose_max_quantity, loose_step_quantity, loose_unit')
         .eq('vendor_id', vendorId)
         .eq('status', 'active')
         .gt('stock', 0)
@@ -2210,6 +2210,10 @@ export default function StoreScreen() {
           item.id
         }
         numColumns={2}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        removeClippedSubviews
         columnWrapperStyle={
           styles.rowWrapper
         }
