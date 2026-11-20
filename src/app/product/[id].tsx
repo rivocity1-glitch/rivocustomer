@@ -1,8 +1,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { addToCart, cart } from '../../lib/cart';
 import { supabase } from '../../lib/supabase';
+
+const { width: windowWidth } = Dimensions.get('window');
 
 function parseProductImages(value: unknown): string[] {
   if (!value) return [];
@@ -16,7 +18,7 @@ function parseProductImages(value: unknown): string[] {
 }
 
 export default function ProductScreen() {
-  const { width } = useWindowDimensions();
+  const { width: screenWidth } = useWindowDimensions();
   const { id } = useLocalSearchParams();
   const [product, setProduct] = useState<any>(null);
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
@@ -234,11 +236,11 @@ export default function ProductScreen() {
             <>
               <ScrollView
                 horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-                onMomentumScrollEnd={event => setImageIndex(Math.round(event.nativeEvent.contentOffset.x / width))}
-                style={styles.imageGalleryScroll}
+                onMomentumScrollEnd={event => setImageIndex(Math.round(event.nativeEvent.contentOffset.x / screenWidth))}
+                style={[styles.imageGalleryScroll, { width: screenWidth }]}
               >
                 {images.map((imageUrl, index) => (
-                  <View key={`${imageUrl}-${index}`} style={styles.imageSlide}>
+                  <View key={`${imageUrl}-${index}`} style={[styles.imageSlide, { width: screenWidth }]}>
                     <Image source={{ uri: imageUrl }} style={styles.productImage} resizeMode="contain" />
                   </View>
                 ))}
@@ -335,7 +337,7 @@ export default function ProductScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' }, loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }, loadingText: { marginTop: 12, color: '#64748B', fontWeight: '600', fontSize: 14 }, scrollContent: { paddingBottom: 130 },
   navHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 54, paddingBottom: 14, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderColor: '#F1F5F9', gap: 14 }, backIconButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F7F8FA', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#EAEFF3' }, backIconText: { fontSize: 18, fontWeight: '700', color: '#0D0D0D' }, navTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: '#0D0D0D', letterSpacing: -0.3 },
-  imageContainer: { width, height: 300, backgroundColor: '#F7F8FA', alignItems: 'center', justifyContent: 'center', position: 'relative', borderBottomWidth: 1, borderColor: '#F1F5F9' }, imageGalleryScroll: { width: '100%', height: '100%' }, imageSlide: { width, height: 300, alignItems: 'center', justifyContent: 'center' }, productImage: { width: '85%', height: '85%' }, imageDotsRow: { position: 'absolute', bottom: 12, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }, imageDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CBD5E1' }, imageDotActive: { width: 18, backgroundColor: '#22CC71' },
+  imageContainer: { width: screenWidth, height: 300, backgroundColor: '#F7F8FA', alignItems: 'center', justifyContent: 'center', position: 'relative', borderBottomWidth: 1, borderColor: '#F1F5F9' }, imageGalleryScroll: { width: '100%', height: '100%' }, imageSlide: { width: screenWidth, height: 300, alignItems: 'center', justifyContent: 'center' }, productImage: { width: '85%', height: '85%' }, imageDotsRow: { position: 'absolute', bottom: 12, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }, imageDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CBD5E1' }, imageDotActive: { width: 18, backgroundColor: '#22CC71' },
   fallbackGraphic: { width: 120, height: 120, borderRadius: 40, backgroundColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }, fallbackLetter: { fontSize: 48, fontWeight: '900', color: '#64748B' },
   metaMainCard: { backgroundColor: '#FFFFFF', padding: 20, borderBottomWidth: 8, borderColor: '#F7F8FA' }, badgeLineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }, stockStatusBadgeContainer: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }, stockStatusBadgeText: { fontSize: 12, fontWeight: '800' }, deliverySpeedBadge: { backgroundColor: '#22CC7110', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }, deliverySpeedText: { fontSize: 11, fontWeight: '900', color: '#22CC71', letterSpacing: 0.2 }, productTitleText: { fontSize: 22, fontWeight: '900', color: '#0D0D0D', lineHeight: 28, letterSpacing: -0.5 }, quantityMetricLabel: { fontSize: 14, color: '#64748B', marginTop: 4, fontWeight: '500' }, pricingLayoutBlock: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, backgroundColor: '#F7F8FA', padding: 14, borderRadius: 16, borderWidth: 1, borderColor: '#EAEFF3' }, priceContainerRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 }, currentPriceLabel: { fontSize: 24, fontWeight: '900', color: '#0D0D0D' }, mrpLabel: { fontSize: 14, color: '#94A3B8', textDecorationLine: 'line-through', fontWeight: '600' }, savingsBoxTag: { backgroundColor: '#22CC71', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 }, savingsBoxText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   expiryAlertCard: { backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 8, borderColor: '#F7F8FA' }, expiryLeftBlock: { flexDirection: 'row', alignItems: 'center', gap: 12 }, expiryCalendarIcon: { fontSize: 22 }, expiryTitleLabel: { fontSize: 13, fontWeight: '800', color: '#0D0D0D' }, expiryDetailText: { fontSize: 12, color: '#64748B', marginTop: 1, fontWeight: '500' }, daysCounterBadge: { backgroundColor: '#F9731610', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }, daysCounterText: { fontSize: 11, fontWeight: '700', color: '#F97316' }, contentDataSectionCard: { backgroundColor: '#FFFFFF', padding: 20, borderBottomWidth: 8, borderColor: '#F7F8FA' }, sectionHeadingText: { fontSize: 16, fontWeight: '900', color: '#0D0D0D', letterSpacing: -0.2, marginBottom: 12 }, bodyDescriptionParagraph: { fontSize: 14, color: '#475569', lineHeight: 22, fontWeight: '500' }, infoGridRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }, infoGridLabel: { fontSize: 13, color: '#64748B', fontWeight: '500' }, infoGridValue: { fontSize: 13, color: '#0D0D0D', fontWeight: '700' }, infoGridValueFallback: { fontSize: 12, color: '#94A3B8', fontWeight: '500', maxWidth: '60%', textAlign: 'right' }, infoGridSeparator: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 10 }, relatedProductsWrapper: { backgroundColor: '#FFFFFF', paddingTop: 20, paddingBottom: 40 }, relatedScrollContent: { paddingHorizontal: 20, gap: 12, marginTop: 4 }, placeholderRelatedCard: { width: 160, backgroundColor: '#F7F8FA', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#EAEFF3' }, placeholderMiniImage: { width: '100%', height: 90, borderRadius: 10, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }, relatedProductMiniImage: { width: '90%', height: '90%' }, placeholderBoxIcon: { fontSize: 20 }, placeholderCardTitle: { fontSize: 12, fontWeight: '700', color: '#0D0D0D' }, placeholderCardPrice: { fontSize: 13, fontWeight: '900', color: '#22CC71', marginTop: 4 }, stickyActionFooterBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderColor: '#F1F5F9', paddingHorizontal: 20, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 15 }, footerPricingDisplayArea: { flexDirection: 'column' }, footerTotalPriceText: { fontSize: 22, fontWeight: '900', color: '#0D0D0D' }, footerMutedSubtitle: { fontSize: 11, color: '#94A3B8', fontWeight: '500', marginTop: 2 }, primaryActionButton: { paddingVertical: 14, paddingHorizontal: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', minWidth: 160 }, activeStateButton: { backgroundColor: '#22CC71' }, disabledStateButton: { backgroundColor: '#94A3B8' }, primaryActionButtonTextLabel: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 }
