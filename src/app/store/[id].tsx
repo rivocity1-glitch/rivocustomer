@@ -1900,6 +1900,7 @@ export default function StoreScreen() {
       const productRows = prodRes.data as any[];
       const universalIds = Array.from(new Set(
         productRows
+          .filter((item: any) => parseProductImages(item.image_url).length === 0)
           .map((item: any) => item.universal_product_id)
           .filter((value: unknown): value is string => typeof value === 'string' && !!value)
       ));
