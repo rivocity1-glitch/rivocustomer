@@ -68,7 +68,47 @@ export default function ProductScreen() {
       return;
     }
 
-    setProduct(data);
+    let productWithImageFallback = data;
+    if (!parseProductImages(data.image_url).length && data.universal_product_id) {
+      const { data: sharedImages, error: sharedImageError } = await supabase
+        .from('universal_product_images')
+        .select('image_url, is_primary, created_at')
+        .eq('universal_product_id', data.universal_product_id)
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true });
+
+      if (sharedImageError) {
+        console.warn('Shared product images could not be loaded:', sharedImageError.message);
+      }
+
+      const sharedUrls = (sharedImages || [])
+        .flatMap((row: any) => parseProductImages(row.image_url))
+        .filter((url: string, index: number, all: string[]) => all.indexOf(url) === index)
+        .slice(0, 5);
+
+      let fallbackUrls = sharedUrls;
+      if (!fallbackUrls.length) {
+        const { data: universalProduct, error: universalError } = await supabase
+          .from('universal_products')
+          .select('image_url')
+          .eq('id', data.universal_product_id)
+          .maybeSingle();
+        if (universalError) {
+          console.warn('Universal product image fallback could not be loaded:', universalError.message);
+        } else {
+          fallbackUrls = parseProductImages(universalProduct?.image_url).slice(0, 5);
+        }
+      }
+
+      if (fallbackUrls.length) {
+        productWithImageFallback = {
+          ...data,
+          image_url: JSON.stringify(fallbackUrls),
+        };
+      }
+    }
+
+    setProduct(productWithImageFallback);
     setImageIndex(0);
     void loadProductVariants(productId);
 

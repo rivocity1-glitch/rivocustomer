@@ -1873,7 +1873,7 @@ export default function StoreScreen() {
     const prodPromise =
       supabase
         .from('products')
-        .select('id, name, description, price, mrp, image_url, category_id, status, stock, vendor_id, weight, gst_rate, gst_slab, is_exclusive, allow_loose_quantity, loose_min_quantity, loose_max_quantity, loose_step_quantity, loose_unit')
+        .select('id, name, description, price, mrp, image_url, universal_product_id, category_id, status, stock, vendor_id, weight, gst_rate, gst_slab, is_exclusive, allow_loose_quantity, loose_min_quantity, loose_max_quantity, loose_step_quantity, loose_unit')
         .eq('vendor_id', vendorId)
         .eq('status', 'active')
         .gt('stock', 0)
@@ -1897,7 +1897,70 @@ export default function StoreScreen() {
     }
 
     if (!prodRes.error && prodRes.data) {
-      setProducts(prodRes.data as Product[]);
+      const productRows = prodRes.data as any[];
+      const universalIds = Array.from(new Set(
+        productRows
+          .map((item: any) => item.universal_product_id)
+          .filter((value: unknown): value is string => typeof value === 'string' && !!value)
+      ));
+
+      const sharedImagesByProduct = new Map<string, string[]>();
+      const universalImageByProduct = new Map<string, unknown>();
+
+      if (universalIds.length > 0) {
+        const [sharedResult, universalResult] = await Promise.all([
+          supabase
+            .from('universal_product_images')
+            .select('universal_product_id, image_url, is_primary, created_at')
+            .in('universal_product_id', universalIds)
+            .order('is_primary', { ascending: false })
+            .order('created_at', { ascending: true }),
+          supabase
+            .from('universal_products')
+            .select('id, image_url')
+            .in('id', universalIds),
+        ]);
+
+        if (sharedResult.error) {
+          console.warn('Shared product images could not be loaded:', sharedResult.error.message);
+        } else {
+          (sharedResult.data || []).forEach((row: any) => {
+            const urls = parseProductImages(row.image_url);
+            const existing = sharedImagesByProduct.get(row.universal_product_id) || [];
+            urls.forEach(url => {
+              if (!existing.includes(url) && existing.length < 5) existing.push(url);
+            });
+            sharedImagesByProduct.set(row.universal_product_id, existing);
+          });
+        }
+
+        if (universalResult.error) {
+          console.warn('Universal product image fallbacks could not be loaded:', universalResult.error.message);
+        } else {
+          (universalResult.data || []).forEach((row: any) => {
+            universalImageByProduct.set(row.id, row.image_url);
+          });
+        }
+      }
+
+      const productsWithImageFallback = productRows.map((item: any) => {
+        // Vendor-selected images have priority. Shared images fill only empty galleries.
+        if (parseProductImages(item.image_url).length > 0) return item;
+
+        const sharedUrls = item.universal_product_id
+          ? sharedImagesByProduct.get(item.universal_product_id) || []
+          : [];
+        const canonicalUrls = item.universal_product_id
+          ? parseProductImages(universalImageByProduct.get(item.universal_product_id))
+          : [];
+        const fallbackUrls = sharedUrls.length > 0 ? sharedUrls : canonicalUrls;
+
+        return fallbackUrls.length > 0
+          ? { ...item, image_url: JSON.stringify(fallbackUrls.slice(0, 5)) }
+          : item;
+      });
+
+      setProducts(productsWithImageFallback as Product[]);
     }
   }
 
