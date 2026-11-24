@@ -3,6 +3,9 @@ import { supabase } from './supabase';
 
 export interface CartItem {
   id: string;
+  cart_key?: string;
+  variant_id?: string | null;
+  variant_name?: string | null;
   vendor_id: string;
   name: string;
   price: number;
@@ -128,18 +131,27 @@ export function addToCart(product: any) {
     return false;
   }
 
-  const existingItem = cart.find((item) => String(item.id) === String(product.id));
+  const cartKey = String(product.cart_key || product.id);
+  const existingItem = cart.find((item) => String(item.cart_key || item.id) === cartKey);
 
   if (existingItem) {
     const nextQuantity = product.cart_quantity != null ? Number(product.cart_quantity) : existingItem.quantity + 1;
+    if (existingItem.stock != null && nextQuantity > Number(existingItem.stock)) return false;
     existingItem.quantity = nextQuantity;
     if (product.cart_quantity != null) {
       existingItem.loose_quantity = nextQuantity;
       existingItem.quantity_unit = product.quantity_unit || existingItem.quantity_unit || null;
     }
   } else {
+    const initialQuantity = product.cart_quantity != null ? Number(product.cart_quantity) : 1;
+    if (!Number.isFinite(initialQuantity) || initialQuantity <= 0) return false;
+    if (product.stock != null && initialQuantity > Number(product.stock)) return false;
+
     cart.push({
       id: String(product.id),
+      cart_key: cartKey,
+      variant_id: product.variant_id ? String(product.variant_id) : null,
+      variant_name: product.variant_name || null,
       vendor_id: String(product.vendor_id || ''),
       name: product.name || 'Product',
       price: Number(product.price || 0),
@@ -148,8 +160,8 @@ export function addToCart(product: any) {
       stock: product.stock != null ? Number(product.stock) : null,
       category_id: product.category_id || null,
       description: product.description || null,
-      quantity: product.cart_quantity != null ? Number(product.cart_quantity) : 1,
-      loose_quantity: product.cart_quantity != null ? Number(product.cart_quantity) : null,
+      quantity: initialQuantity,
+      loose_quantity: product.cart_quantity != null ? initialQuantity : null,
       quantity_unit: product.quantity_unit || null,
       gst_rate: product.gst_rate != null ? Number(product.gst_rate) : 0,
       gst_slab: product.gst_slab || null,
@@ -167,8 +179,8 @@ export function addToCart(product: any) {
   return true;
 }
 
-export function increaseQuantity(productId: string) {
-  const item = cart.find((item) => String(item.id) === String(productId));
+export function increaseQuantity(productKey: string) {
+  const item = cart.find((item) => String(item.cart_key || item.id) === String(productKey));
 
   if (item) {
     if (item.allow_loose_quantity && item.loose_step_quantity != null && item.loose_max_quantity != null) {
@@ -177,15 +189,17 @@ export function increaseQuantity(productId: string) {
       item.quantity = next;
       item.loose_quantity = next;
     } else {
-      item.quantity += 1;
+      const nextQuantity = item.quantity + 1;
+      if (item.stock != null && nextQuantity > Number(item.stock)) return;
+      item.quantity = nextQuantity;
     }
     saveCartLocally();
     notifyCartChange();
   }
 }
 
-export function decreaseQuantity(productId: string) {
-  const itemIndex = cart.findIndex((item) => String(item.id) === String(productId));
+export function decreaseQuantity(productKey: string) {
+  const itemIndex = cart.findIndex((item) => String(item.cart_key || item.id) === String(productKey));
   if (itemIndex === -1) return;
 
   const item = cart[itemIndex];
@@ -206,8 +220,8 @@ export function decreaseQuantity(productId: string) {
   notifyCartChange();
 }
 
-export function removeFromCart(productId: string) {
-  const index = cart.findIndex((item) => String(item.id) === String(productId));
+export function removeFromCart(productKey: string) {
+  const index = cart.findIndex((item) => String(item.cart_key || item.id) === String(productKey));
 
   if (index !== -1) {
     cart.splice(index, 1);

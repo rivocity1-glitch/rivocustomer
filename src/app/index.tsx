@@ -12,6 +12,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { getUnreadCustomerNotificationCount } from '../services/notificationService';
@@ -36,6 +37,8 @@ interface Product {
 }
 
 export default function HomeScreen() {
+  const { width: windowWidth } = useWindowDimensions();
+  const storeTileSize = Math.max(110, Math.floor((windowWidth - 32 - 12) / 2));
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -117,64 +120,71 @@ export default function HomeScreen() {
           } = await supabase.auth.getUser();
 
           if (!user) {
-            setLoading(false);
+            if (isMounted) setLoading(false);
             return;
           }
 
-          // Fetch fresh unread count on focus return
-          getUnreadCustomerNotificationCount().then((cnt) => {
-            if (isMounted) setUnreadCount(cnt);
-          });
+          // Independent home data requests run together to reduce screen wait time.
+          const [profileResult, categoryResult, vendorResult, unreadCountResult] = await Promise.all([
+            supabase
+              .from('customers')
+              .select('customer_name')
+              .eq('auth_user_id', user.id)
+              .maybeSingle(),
+            supabase
+              .from('product_categories')
+              .select('id, name'),
+            supabase
+              .from('vendors')
+              .select('id, shop_name, status, vendor_profiles(avatar_url)')
+              .eq('status', 'approved'),
+            getUnreadCustomerNotificationCount(),
+          ]);
 
-          // 1. Fetch customer profile
-          const { data: profile } = await supabase
-            .from('customers')
-            .select('customer_name')
-            .eq('auth_user_id', user.id)
-            .single();
+          if (!isMounted) return;
 
-          if (isMounted && profile) {
-            setCustomerName(profile.customer_name);
+          if (profileResult.error) {
+            console.warn('Customer name could not be loaded:', profileResult.error.message);
+          } else if (profileResult.data) {
+            setCustomerName(profileResult.data.customer_name || '');
           }
 
-          // 2. Fetch categories
-          const { data: catData } = await supabase
-            .from('product_categories')
-            .select('id, name');
-
+          const catData = categoryResult.data || [];
+          setCategories(catData);
           const map: Record<string, string> = {};
-          if (catData) {
-            if (isMounted) setCategories(catData);
-            catData.forEach((cat: Category) => {
-              map[cat.id] = cat.name;
-            });
-            if (isMounted) setCategoryMap(map);
-          }
+          catData.forEach((cat: Category) => {
+            map[cat.id] = cat.name;
+          });
+          setCategoryMap(map);
 
-          // 3. Fetch approved vendors
-          const { data: vendorData } = await supabase
-            .from('vendors')
-            .select('*, vendor_profiles(avatar_url)')
-            .eq('status', 'approved');
+          const vendorData = vendorResult.data || [];
+          const parsedVendors = vendorData.map((v: any) => ({
+            ...v,
+            avatar_url: Array.isArray(v.vendor_profiles)
+              ? v.vendor_profiles[0]?.avatar_url || null
+              : v.vendor_profiles?.avatar_url || null,
+          }));
+          setVendors(parsedVendors);
+          setUnreadCount(unreadCountResult);
 
-          if (isMounted && vendorData) {
-            const parsedVendors = vendorData.map((v: any) => ({
-              ...v,
-              avatar_url: Array.isArray(v.vendor_profiles)
-                ? v.vendor_profiles[0]?.avatar_url
-                : v.vendor_profiles?.avatar_url || null,
-            }));
-            setVendors(parsedVendors);
-          }
+          // Only fetch in-stock active products belonging to approved vendors.
+          // These are the only products needed to decide category-to-store matching.
+          const vendorIds = parsedVendors.map((vendor: Vendor) => vendor.id);
+          if (vendorIds.length === 0) {
+            setProducts([]);
+          } else {
+            const { data: prodData, error: productError } = await supabase
+              .from('products')
+              .select('vendor_id, category_id')
+              .in('vendor_id', vendorIds)
+              .eq('status', 'active')
+              .gt('stock', 0);
 
-          // 4. Fetch active products
-          const { data: prodData } = await supabase
-            .from('products')
-            .select('id, vendor_id, category_id, status, is_exclusive')
-            .eq('status', 'active');
-
-          if (isMounted && prodData) {
-            setProducts(prodData);
+            if (productError) {
+              console.warn('Store categories could not be refreshed:', productError.message);
+            } else if (isMounted) {
+              setProducts(prodData || []);
+            }
           }
         } catch (error) {
           console.error('Error refreshing home data:', error);
@@ -416,23 +426,31 @@ export default function HomeScreen() {
                 <Pressable
                   key={vendor.id}
                   onPress={() => router.push(`/store/${vendor.id}` as any)}
-                  style={({ pressed }) => [styles.storeCard, pressed && styles.pressedCard]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${vendor.shop_name}`}
+                  style={({ pressed }) => [
+                    styles.storeCard,
+                    { width: storeTileSize },
+                    pressed && styles.pressedCard,
+                  ]}
                 >
-                  <View style={styles.storeCardAccent} />
-                  {vendor.avatar_url ? (
-                    <View style={styles.avatarContainer}>
-                      <Image source={{ uri: vendor.avatar_url }} style={styles.storeAvatar} />
-                    </View>
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarPlaceholderText}>{getInitials(vendor.shop_name)}</Text>
-                    </View>
-                  )}
-                  <View style={styles.storeInfoWrapper}>
-                    <Text style={styles.storeNameText} numberOfLines={2}>
-                      {vendor.shop_name}
-                    </Text>
+                  <View style={[styles.storeImageFrame, { width: storeTileSize, height: storeTileSize }]}>
+                    {vendor.avatar_url ? (
+                      <Image
+                        source={{ uri: vendor.avatar_url }}
+                        style={styles.storeAvatar}
+                        resizeMode="cover"
+                        accessibilityLabel={`${vendor.shop_name} store image`}
+                      />
+                    ) : (
+                      <View style={styles.avatarPlaceholder}>
+                        <Text style={styles.avatarPlaceholderText}>{getInitials(vendor.shop_name)}</Text>
+                      </View>
+                    )}
                   </View>
+                  <Text style={styles.storeNameText} numberOfLines={2}>
+                    {vendor.shop_name}
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -477,15 +495,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   contentContainer: {
-    paddingTop: 60,
+    paddingTop: 52,
     paddingHorizontal: 16,
-    paddingBottom: 120,
+    paddingBottom: 132,
   },
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 22,
   },
   headerActionsWrapper: {
     flexDirection: 'row',
@@ -582,11 +600,12 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
-    backgroundColor: '#F7F8FA',
-    borderRadius: 16,
+    minHeight: 52,
+    marginBottom: 28,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#EAEFF3',
+    borderColor: '#E7ECF1',
     shadowColor: '#0D0D0D',
     shadowOffset: { width: 0, height: 2 },
   },
@@ -613,10 +632,10 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '900',
     color: '#0D0D0D',
-    letterSpacing: -0.3,
+    letterSpacing: -0.25,
   },
   sectionSubtitle: {
     fontSize: 12,
@@ -674,90 +693,58 @@ const styles = StyleSheet.create({
   storesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 12,
+    justifyContent: 'flex-start',
+    columnGap: 12,
+    rowGap: 16,
   },
   storeCard: {
-    backgroundColor: '#F7F8FA',
-    borderRadius: 20,
-    width: '48%',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#EAEFF3',
-    overflow: 'hidden',
-    paddingTop: 18,
-    paddingBottom: 18,
-    paddingHorizontal: 12,
-    shadowColor: '#0D0D0D',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.02,
-    shadowRadius: 10,
-    elevation: 1,
-  },
-  storeCardAccent: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    backgroundColor: '#A8E63A',
-    opacity: 0.4,
+    marginBottom: 2,
   },
   pressedCard: {
-    opacity: 0.9,
-    transform: [{ scale: 0.98 }],
-    borderColor: '#22CC71',
+    opacity: 0.88,
+    transform: [{ scale: 0.975 }],
   },
-  avatarContainer: {
+  storeImageFrame: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#22CC71',
+    borderWidth: 1,
+    borderColor: '#DDE7E1',
     shadowColor: '#0D0D0D',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-    marginBottom: 12,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
+    elevation: 3,
   },
   storeAvatar: {
-    width: 84,
-    height: 84,
-    borderRadius: 28,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#E9EEF2',
   },
   avatarPlaceholder: {
-    width: 84,
-    height: 84,
-    borderRadius: 28,
-    backgroundColor: '#22CC71',
+    flex: 1,
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: '#22CC71',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 4,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    backgroundColor: '#22CC71',
   },
   avatarPlaceholderText: {
     color: '#FFFFFF',
-    fontSize: 24,
+    fontSize: 38,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
-  storeInfoWrapper: {
-    alignItems: 'center',
-    width: '100%',
-    justifyContent: 'center',
-  },
   storeNameText: {
-    fontSize: 14,
+    marginTop: 8,
+    fontSize: 13,
     fontWeight: '800',
     color: '#0D0D0D',
     textAlign: 'center',
     width: '100%',
     lineHeight: 18,
+    letterSpacing: 0.1,
   },
   loadingContainer: {
     paddingVertical: 48,
@@ -811,7 +798,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 84,
+    height: 88,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
