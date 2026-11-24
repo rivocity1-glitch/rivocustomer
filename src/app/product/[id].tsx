@@ -141,6 +141,12 @@ export default function ProductScreen() {
   const variantSelectionRequired = variationGroups.length > 0;
   const sellingPrice = Number(selectedVariant?.price ?? product.price ?? 0);
   const actualMrp = Number(selectedVariant?.mrp ?? product.mrp ?? sellingPrice);
+  const cartProduct = {
+    ...product,
+    price: sellingPrice,
+    mrp: actualMrp,
+    ...(selectedVariant ? { variant_id: selectedVariant.id, variant_name: selectedVariant.name } : {})
+  };
   const availableStock = selectedVariant ? Number(selectedVariant.stock || 0) : Number(product.stock || 0);
   const totalSavings = Math.max(0, actualMrp - sellingPrice);
   const daysLeft = product.expiry_date

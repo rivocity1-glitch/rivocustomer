@@ -175,7 +175,7 @@ export default function HomeScreen() {
           } else {
             const { data: prodData, error: productError } = await supabase
               .from('products')
-              .select('vendor_id, category_id')
+              .select('id, status, vendor_id, category_id')
               .in('vendor_id', vendorIds)
               .eq('status', 'active')
               .gt('stock', 0);
