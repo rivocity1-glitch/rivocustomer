@@ -143,6 +143,10 @@ export function addToCart(product: any) {
       existingItem.quantity_unit = product.quantity_unit || existingItem.quantity_unit || null;
     }
   } else {
+    const initialQuantity = product.cart_quantity != null ? Number(product.cart_quantity) : 1;
+    if (!Number.isFinite(initialQuantity) || initialQuantity <= 0) return false;
+    if (product.stock != null && initialQuantity > Number(product.stock)) return false;
+
     cart.push({
       id: String(product.id),
       cart_key: cartKey,
@@ -156,8 +160,8 @@ export function addToCart(product: any) {
       stock: product.stock != null ? Number(product.stock) : null,
       category_id: product.category_id || null,
       description: product.description || null,
-      quantity: product.cart_quantity != null ? Number(product.cart_quantity) : 1,
-      loose_quantity: product.cart_quantity != null ? Number(product.cart_quantity) : null,
+      quantity: initialQuantity,
+      loose_quantity: product.cart_quantity != null ? initialQuantity : null,
       quantity_unit: product.quantity_unit || null,
       gst_rate: product.gst_rate != null ? Number(product.gst_rate) : 0,
       gst_slab: product.gst_slab || null,
